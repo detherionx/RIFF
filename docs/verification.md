@@ -2,12 +2,12 @@
 
 ## Automated
 
-18 October 2026: 32 TypeScript tests passed; 10 Python API tests passed locally (the separate PostgreSQL integration test skipped without a local database). Production build passed on Windows and in Railway's Linux container. Live HTTPS smoke checks passed against the deployed PostgreSQL-backed API: authentication, exact backup/restore, account isolation, validation, rejected-write preservation and account deletion. Test accounts were removed.
+18 October 2026: 37 TypeScript tests passed. All 11 Python API tests passed in GitHub Actions against PostgreSQL 18; locally, 10 passed and the database integration test skipped without a local database. Production build passed on Windows and in Railway's Linux container. Live HTTPS smoke checks passed against the deployed PostgreSQL-backed API: authentication, exact backup/restore, account isolation, validation, rejected-write preservation and account deletion. Test accounts were removed.
 
 - TypeScript strict checks and Next.js production build.
 - Synthetic audio: low/high guitar pitch, sample rates, silence/noise/DC/clipping, repeated attacks, missed/extra events, timing offset, ringing-mode abstention, relative decay and AudioWorklet flush.
 - Curriculum/adaptation: all six stages, original study structure, prerequisite enforcement, confidence gates, tempo progression, transition remediation, interval review, overdue review and malformed/duplicate attempts.
-- Interactive theory core: correct natural minor notes and rhythm timing from the actual audio clock.
+- Interactive theory core: correct natural minor notes, rhythm timing from the actual audio clock, independent review schedules for all five modes, failure reset and overdue selection.
 - Persistence/proxy: nested input validation, bounded request bytes, method/path restrictions and origin checks.
 - FastAPI: bearer authentication, account isolation, validation, deletion, rate limits, CORS and readiness.
 

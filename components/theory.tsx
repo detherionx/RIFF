@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Ear, RotateCcw, Play } from "lucide-react";
 import type { Attempt, Progress } from "@/lib/types";
 import { AudioEngine } from "@/lib/audio";
+import { nextTheoryReview, theoryReviews } from "@/lib/theory-review";
 import Fretboard, { noteNames } from "./fretboard";
 
 const modes = [
@@ -73,7 +74,8 @@ export default function Theory({
   progress: Progress;
   onAttempt: (attempt: Attempt) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("note");
+  const reviews = theoryReviews(progress.attempts);
+  const [mode, setMode] = useState<Mode>(() => nextTheoryReview(reviews));
   const completed = (id: Mode) =>
     progress.attempts.filter((a) => a.exerciseId === `theory-${id}`);
   const difficulty = (id: Mode) =>
@@ -84,8 +86,8 @@ export default function Theory({
           completed(id).filter((a) => (a.evidence.score ?? 0) >= 85).length / 4,
         ),
     );
-  const [level, setLevel] = useState(() => difficulty("note"));
-  const [round, setRound] = useState(() => completed("note").length);
+  const [level, setLevel] = useState(() => difficulty(mode));
+  const [round, setRound] = useState(() => completed(mode).length);
   const [picked, setPicked] = useState<number[]>([]),
     [answer, setAnswer] = useState<boolean | null>(null);
   const [message, setMessage] = useState(""),
@@ -315,7 +317,7 @@ export default function Theory({
             key={m.id}
             onClick={() => reset(m.id)}
           >
-            {m.name}
+            {m.name}{reviews[m.id].due ? " · Due" : ""}
           </button>
         ))}
       </div>
@@ -329,6 +331,13 @@ export default function Theory({
           </div>
           <span className="pill">{count} answers saved</span>
         </div>
+        <p className="muted" role="status">
+          {reviews[mode].due
+            ? "Review due now. Recall this skill before moving on."
+            : reviews[mode].dueAt !== null
+              ? `Next review: ${new Date(reviews[mode].dueAt!).toLocaleDateString()}. You can practise sooner.`
+              : "Your first answer will start this skill’s review schedule."}
+        </p>
         {mode === "note" && (
           <>
             <p className="exercise-question">
@@ -493,7 +502,8 @@ export default function Theory({
       </div>
       <p className="privacy-note">
         Answers are saved on this device. Four accurate answers increase
-        difficulty; theory mistakes guide your next playing review.
+        difficulty. Clean answers schedule review after 1, 3, 7, then 14 days;
+        mistakes are due again immediately and guide your next playing review.
       </p>
     </section>
   );
