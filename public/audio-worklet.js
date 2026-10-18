@@ -4,8 +4,8 @@ class RiffCapture extends AudioWorkletProcessor {
     this.buffer = new Float32Array(4096);
     this.offset = 0;
     this.start = 0;
-    this.port.onmessage = event => {
-      if (event.data === 'flush') {
+    this.port.onmessage = (event) => {
+      if (event.data === "flush") {
         this.flush();
         this.port.postMessage({ flushed: true });
       }
@@ -31,4 +31,4 @@ class RiffCapture extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('riff-capture', RiffCapture);
+registerProcessor("riff-capture", RiffCapture);

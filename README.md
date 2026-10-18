@@ -2,6 +2,8 @@
 
 A local-first guitar teacher. Pick a musical destination, practise an original E-minor study, and receive feedback from measured notes and timing.
 
+**[Open RIFF](https://web-production-61a92.up.railway.app)** · [Source repository](https://github.com/detherionx/RIFF)
+
 ## Start playing
 
     npm ci

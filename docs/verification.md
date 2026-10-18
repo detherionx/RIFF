@@ -2,6 +2,8 @@
 
 ## Automated
 
+18 October 2026: 32 TypeScript tests passed; 10 Python API tests passed locally (the separate PostgreSQL integration test skipped without a local database). Production build passed on Windows and in Railway's Linux container. Live HTTPS smoke checks passed against the deployed PostgreSQL-backed API: authentication, exact backup/restore, account isolation, validation, rejected-write preservation and account deletion. Test accounts were removed.
+
 - TypeScript strict checks and Next.js production build.
 - Synthetic audio: low/high guitar pitch, sample rates, silence/noise/DC/clipping, repeated attacks, missed/extra events, timing offset, ringing-mode abstention, relative decay and AudioWorklet flush.
 - Curriculum/adaptation: all six stages, original study structure, prerequisite enforcement, confidence gates, tempo progression, transition remediation, interval review, overdue review and malformed/duplicate attempts.
@@ -18,6 +20,8 @@ Performed in a desktop Chromium-based browser:
 - Practice reference playback, tablature cue and stop controls.
 - Find the Note correct response and persistence.
 - E natural minor selection including F-sharp, correct scoring and saved result.
+- Persisted theory results after a browser reload.
+- Public HTTPS application loaded successfully with no development tools required.
 
 ## Acceptance still requiring physical testing
 

@@ -1,69 +1,721 @@
-'use client';
-import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Play, Mic, Square, Repeat2, Download, Headphones, ChevronDown } from 'lucide-react';
-import { AudioEngine, analyzeRecording, compareMuting, detectPitch, type MutingComparison } from '@/lib/audio';
-import { recommend } from '@/lib/learning';
-import { getExercise } from '@/lib/curriculum';
-import type { Attempt, Evidence, Exercise, Progress } from '@/lib/types';
-import { download, wav } from '@/lib/storage';
-import Fretboard, { noteName } from './fretboard';
-import VideoReview from './video-review';
-export default function Practice({exercise,initialBpm,progress,onAttempt,onBack,onSelect}:{exercise:Exercise;initialBpm?:number;progress:Progress;onAttempt:(a:Attempt)=>void;onBack:()=>void;onSelect:(id:string,bpm?:number)=>void}){
- const [assessment,setAssessment]=useState<'separated'|'ringing'>('separated');
- const ringingAvailable=['arpeggios','transitions','performance'].includes(exercise.skill);
- const [bpm,setBpm]=useState(initialBpm||exercise.bpm),[state,setState]=useState<'idle'|'preparing'|'countdown'|'recording'|'analyzing'|'demo'>('idle'),[pulse,setPulse]=useState(-1),[evidence,setEvidence]=useState<Evidence|null>(null),[error,setError]=useState(''),[wave,setWave]=useState<number[]>([]),[pitch,setPitch]=useState('—'),[url,setUrl]=useState(''),[latency,setLatency]=useState(0),[muteStep,setMuteStep]=useState(0),[comparison,setComparison]=useState<MutingComparison|null>(null),[repeat,setRepeat]=useState(false);
- const engine=useRef<AudioEngine|null>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null),audioBlob=useRef<Blob|null>(null),urlRef=useRef(''),alive=useRef(true),offset=useRef(0),baseline=useRef<{samples:Float32Array;rate:number}|null>(null),busy=useRef(false),finishing=useRef(false),generation=useRef(0),modeRef=useRef(state);
- modeRef.current=state;
- const tabRef=useRef<HTMLDivElement>(null);
- useEffect(()=>{const row=tabRef.current, note=row?.querySelector<HTMLElement>('.current');if(row&&note&&(note.offsetLeft<row.scrollLeft||note.offsetLeft+note.offsetWidth>row.scrollLeft+row.clientWidth))row.scrollTo({left:Math.max(0,note.offsetLeft-row.clientWidth/3),behavior:'smooth'});},[pulse]);
- const active=['recording','countdown','preparing','demo','analyzing'].includes(state),next=recommend(progress),currentNote=exercise.notes.findLast(n=>n.beat<=pulse)||exercise.notes[0];
- useEffect(()=>{alive.current=true;return()=>{alive.current=false;discard();if(urlRef.current)URL.revokeObjectURL(urlRef.current);};},[]);
- useEffect(()=>{function visibility(){if(document.hidden&&busy.current){discard();setState('idle');setPulse(-1);setError('Practice paused when the app went into the background. Start a new take for reliable timing.');}}document.addEventListener('visibilitychange',visibility);return()=>document.removeEventListener('visibilitychange',visibility);},[]);
- function audio(){return engine.current ||=new AudioEngine();}
- function clearTimers(){if(timer.current)clearInterval(timer.current);timer.current=null;}
- function discard(){generation.current++;clearTimers();const previous=engine.current;engine.current=null;busy.current=false;finishing.current=false;void previous?.close().catch(()=>{});}
- async function demo(){
-  if(busy.current)return;busy.current=true;const run=++generation.current,session=audio();setError('');setEvidence(null);setState('demo');
-  try{const first=await session.playExercise(exercise,bpm);if(!alive.current||run!==generation.current||first===undefined)return;
-   timer.current=setInterval(()=>{if(!alive.current||run!==generation.current)return;const elapsed=session.currentTime-first;setPulse(Math.floor(elapsed*bpm/60));if(elapsed>=exercise.beats*60/bpm+.15){session.stopPlayback();clearTimers();busy.current=false;setState('idle');setPulse(-1);}},40);
-  }catch(e){if(alive.current&&run===generation.current){busy.current=false;setState('idle');setError(String(e));}}
- }
- async function start(){
-  if(busy.current)return;busy.current=true;const run=++generation.current,session=audio();setError('');setEvidence(null);setComparison(null);setState('preparing');
-  try{
-   await session.prepareMicrophone((samples,rate)=>{if(!alive.current||run!==generation.current)return;setWave(Array.from({length:64},(_,i)=>samples[Math.floor(i*samples.length/64)]||0));const p=detectPitch(samples,rate);setPitch(p&&p.confidence>.8?noteName(Math.round(69+12*Math.log2(p.frequency/440))):'—');});
-   if(!alive.current||run!==generation.current){await session.close();return;}
-   const capture=session.startCapture(),first=await session.startMetronome(bpm),boundary=first+6*60/bpm;
-   if(!alive.current||run!==generation.current){await session.close();return;}
-   offset.current=boundary-capture;setPulse(-6);setState('countdown');
-   timer.current=setInterval(()=>{if(!alive.current||run!==generation.current)return;const elapsed=session.currentTime-boundary,p=Math.floor(elapsed*bpm/60);setPulse(p);if(p>=0)setState('recording');if(elapsed>=exercise.beats*60/bpm+.2)void finish(false,session,run);},40);
-  }catch(e){await session.close().catch(()=>{});if(engine.current===session)engine.current=null;if(alive.current&&run===generation.current){busy.current=false;setState('idle');setError(e instanceof Error?e.message:'Microphone access failed. Check browser permissions and try again.');}}
- }
- async function finish(cancel=false,session=engine.current,run=generation.current){
-  if(!session||finishing.current||run!==generation.current)return;finishing.current=true;clearTimers();session.stopMetronome();session.stopPlayback();
-  if(modeRef.current==='demo'){generation.current++;finishing.current=false;busy.current=false;setState('idle');setPulse(-1);return;}
-  setState('analyzing');
-  try{
-   const captured=await session.stopCapture();await session.close();if(engine.current===session)engine.current=null;
-   if(!alive.current||run!==generation.current||cancel)return;
-   const from=Math.max(0,Math.round(offset.current*captured.sampleRate)),to=from+Math.round((exercise.beats*60/bpm+.2)*captured.sampleRate),samples=captured.samples.slice(from,to);
-   audioBlob.current=wav(samples,captured.sampleRate);if(urlRef.current)URL.revokeObjectURL(urlRef.current);urlRef.current=URL.createObjectURL(audioBlob.current);setUrl(urlRef.current);
-   const result=analyzeRecording(samples,captured.sampleRate,exercise,bpm,latency,assessment);setEvidence(result);
-   onAttempt({id:crypto.randomUUID(),exerciseId:exercise.id,skill:exercise.skill,at:new Date().toISOString(),bpm,seconds:Math.round(samples.length/captured.sampleRate),evidence:result});
-   if(exercise.kind==='muting'){
-    if(muteStep===0&&result.confidence!=='low'){baseline.current={samples,rate:captured.sampleRate};setMuteStep(1);}
-    else if(baseline.current&&baseline.current.rate===captured.sampleRate){const compared=compareMuting(baseline.current.samples,samples,captured.sampleRate);setComparison(compared);if(muteStep===1&&compared.confidence!=='low')setMuteStep(2);}
-   }
-  }catch(e){if(alive.current&&run===generation.current)setError(e instanceof Error?e.message:'The recording could not be analyzed. Please retry.');}
-  finally{if(run===generation.current){busy.current=false;finishing.current=false;if(alive.current){setState('idle');setPulse(-1);setWave([]);setPitch('—');}}}
- }
- const previous=progress.attempts.filter(a=>a.exerciseId===exercise.id&&a.evidence.score!==null).slice(-2),change=previous.length===2?previous[1].evidence.score!-previous[0].evidence.score!:null;
- return <section className="practice-page"><button className="text-button back" onClick={onBack}><ArrowLeft size={16}/> Back to your journey</button><div className="section-heading"><div><div className="eyebrow">PRACTICE ROOM / STAGE {exercise.stage.toString().padStart(2,'0')}</div><h1>{exercise.title}</h1><p className="lede">{exercise.subtitle}</p></div><span className="pill"><span className={`status-dot ${state==='recording'?'live':''}`}/>{state==='recording'?'Recording locally':'On-device analysis'}</span></div>
- <div className="practice-layout"><div><div className="practice-score"><div className="section-heading"><span className="eyebrow">{state==='countdown'?`COUNT IN · ${Math.max(1,pulse+7)} / 6`:state==='recording'?'YOUR TURN':state==='demo'?'LISTEN & FOLLOW':'YOUR NEXT NOTES'}</span><span className="mono">6/8 <span className="muted">·</span> E MINOR</span></div><div ref={tabRef} className="tablature" aria-label="Exercise tablature, horizontally scrollable"><div className="tab-labels">{['e','B','G','D','A','E'].map((s,i)=><span key={i}>{s}</span>)}</div>{exercise.notes.map((n,i)=><div key={i} className={`tab-note ${pulse>=n.beat&&pulse<n.beat+n.duration?'current':''} ${i%6===0?'bar-line':''}`}><div className="tab-count">{n.beat%6+1}</div>{Array.from({length:6},(_,s)=><span key={s}>{n.string===s+1?<b>{n.fret}</b>:<i/>}</span>)}<small>{n.finger||'○'}</small></div>)}</div><Fretboard selected={pulse>=0?[currentNote]:exercise.notes.slice(0,1)} labels={false}/><div className="score-legend"><span>Numbers = frets</span><span>○ = open string</span><span>Below = fretting finger</span></div></div>
- <div className="transport"><div className="tempo-control"><label htmlFor="tempo">PULSE / MIN <strong>{bpm}</strong></label><input id="tempo" type="range" min="50" max="180" step="5" disabled={active} value={bpm} onChange={e=>setBpm(+e.target.value)}/><small>Eighth-note pulse · {Math.round(bpm/3)} dotted-quarter beats/min</small></div><div className="button-row">{!active?<><button className="button primary large" onClick={start}><Mic size={20}/>{evidence?'Record another take':'Let’s play'}</button><button className="button secondary large" onClick={demo}><Play size={19}/> Hear it first</button></>:<button disabled={state==='analyzing'||state==='preparing'} className="button primary large" onClick={()=>void finish(true)}><Square size={18}/>{state==='analyzing'?'Listening back…':state==='preparing'?'Opening microphone…':'Stop'}</button>}</div><button className={`repeat-toggle ${repeat?'selected':''}`} aria-pressed={repeat} title="Keep the next action on this phrase; recording always starts manually" onClick={()=>setRepeat(r=>!r)}><Repeat2 size={16}/> {repeat?'Stay on this phrase: on':'Stay on this phrase'}</button></div>
- {ringingAvailable&&<div className="why-note"><label htmlFor="assessment-mode"><strong>How are you playing this take?</strong></label><select id="assessment-mode" disabled={active} value={assessment} onChange={e=>{setAssessment(e.target.value as 'separated'|'ringing');setEvidence(null);}}><option value="separated">Separated notes (scored)</option><option value="ringing">Let notes ring (review only)</option></select><p>For scored takes, release each note before the next. Natural ringing performance can be recorded for listening, but cannot be reliably scored.</p></div>}
- <div className="input-monitor"><span className="mono">INPUT</span><svg viewBox="0 0 640 40" aria-label={wave.length?'Live microphone waveform':'Microphone inactive'} preserveAspectRatio="none"><line x1="0" y1="20" x2="640" y2="20" stroke="#41413c"/><polyline points={wave.map((v,i)=>`${i*10},${20+v*65}`).join(' ')} fill="none" stroke="#e8a270" strokeWidth="2"/></svg><strong>{pitch}</strong></div>
- {error&&<p className="error" role="alert">{error}</p>}{evidence&&<div className={`performance-result ${evidence.score===null?'uncertain':''}`} role="status"><div className="section-heading"><div><span className="eyebrow">{assessment==='ringing'?'RECORDING FOR YOUR REVIEW':`WHAT WE HEARD · ${evidence.confidence.toUpperCase()} CONFIDENCE`}</span><h2>{evidence.score===null?(assessment==='ringing'?'Your performance, ready to hear.':'Let’s get a clearer take.'):evidence.score>=85?'The phrase is coming together.':'Here’s your next small step.'}</h2></div>{evidence.score!==null&&<div className="result-score">{evidence.score}<small>/100</small></div>}</div><p>{evidence.message}</p><div className="result-metrics"><span><strong>{evidence.pitchAccuracy===null?'—':`${Math.round(evidence.pitchAccuracy)}%`}</strong>Note match</span><span><strong>{evidence.timingMs===null?'—':`${Math.round(evidence.timingMs)} ms`}</strong>Timing deviation</span><span><strong>{evidence.score===null?'—':evidence.missed}</strong>Missed notes</span><span><strong>{evidence.score===null?'—':evidence.extra}</strong>Extra events</span></div>{change!==null&&<p className="muted">{change>0?`Up ${change}`:change<0?`Down ${Math.abs(change)}`:'Unchanged'} points from your previous scored take.</p>}{url&&<div className="recording-playback"><audio src={url} controls/><button className="icon-button" aria-label="Download take" onClick={()=>audioBlob.current&&download('riff-take.wav',audioBlob.current)}><Download size={18}/></button></div>}<button className="text-button" onClick={()=>repeat?void start():onSelect(next.exerciseId,next.bpm)}>{repeat?'Repeat this phrase':`Next: ${getExercise(next.exerciseId)?.title||'focused practice'}`} <ArrowRight size={17}/></button><p className="muted small">{repeat?'Same phrase, same tempo. Aim for three consistent takes.':next.reason}</p></div>}
- {exercise.kind==='muting'&&<div className="muting-panel"><span className="eyebrow">COMPARE YOUR OWN SOUND</span><h2>{['1. Open and ringing','2. Light palm mute','3. Stronger palm mute'][muteStep]}</h2><p>Play this same pattern {['without muting to establish your baseline','with the side of your palm lightly touching the strings near the bridge','with a little more contact near the bridge'][muteStep]}. Keep microphone position, gain and tempo unchanged. We compare decay, not hand position.</p>{comparison&&<div className="feedback"><strong>{comparison.reductionPercent===null?'Not enough clear attacks':`${Math.round(comparison.reductionPercent)}% shorter decay than your baseline`}</strong><p>{comparison.message}</p><small>{comparison.confidence} confidence · compression and room echo can change this measurement</small></div>}<button className="text-button" disabled={active} onClick={()=>{setMuteStep(0);baseline.current=null;setComparison(null);}}>Reset baseline <Repeat2 size={16}/></button></div>}
- </div><aside className="teacher-notes"><span className="eyebrow">ON YOUR MUSIC STAND</span><h2>One note at a time.</h2><ol>{exercise.instructions.map((step,i)=><li key={i}>{step}</li>)}</ol><div className="why-note"><span className="eyebrow">THE CONNECTION</span><p>{exercise.why}</p></div><p className="headphone-note"><Headphones size={22}/> Use headphones so the metronome doesn’t enter your recording. Play with a clean tone.</p><details><summary>Input & timing <ChevronDown size={14}/></summary><p className="muted">Use your device microphone or an audio interface selected in your browser. Acoustic arrival and interface delay affect timing. Prefer wired headphones.</p><label htmlFor="latency">Known input delay: {latency} ms</label><input id="latency" type="range" min="0" max="250" step="5" value={latency} disabled={active} onChange={e=>setLatency(+e.target.value)}/><p className="small muted">Leave at 0 unless you have measured your setup’s delay. RIFF never silently shifts your take to make timing look better.</p></details></aside></div><VideoReview/>{exercise.skill === 'performance' && <div className="reference-audio"><h2>The complete First Light study</h2><p className="muted">Original synthesized reference · E minor · 100 eighth-note pulses/min</p><audio controls src="/first-light.wav" preload="none"/><a className="text-button" href="/first-light.wav" download>Download reference WAV <Download size={16}/></a></div>}</section>;
+"use client";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Play,
+  Mic,
+  Square,
+  Repeat2,
+  Download,
+  Headphones,
+  ChevronDown,
+} from "lucide-react";
+import {
+  AudioEngine,
+  analyzeRecording,
+  compareMuting,
+  detectPitch,
+  type MutingComparison,
+} from "@/lib/audio";
+import { recommend } from "@/lib/learning";
+import { getExercise } from "@/lib/curriculum";
+import type { Attempt, Evidence, Exercise, Progress } from "@/lib/types";
+import { download, wav } from "@/lib/storage";
+import Fretboard, { noteName } from "./fretboard";
+import VideoReview from "./video-review";
+export default function Practice({
+  exercise,
+  initialBpm,
+  progress,
+  onAttempt,
+  onBack,
+  onSelect,
+}: {
+  exercise: Exercise;
+  initialBpm?: number;
+  progress: Progress;
+  onAttempt: (a: Attempt) => void;
+  onBack: () => void;
+  onSelect: (id: string, bpm?: number) => void;
+}) {
+  const [assessment, setAssessment] = useState<"separated" | "ringing">(
+    "separated",
+  );
+  const ringingAvailable = ["arpeggios", "transitions", "performance"].includes(
+    exercise.skill,
+  );
+  const [bpm, setBpm] = useState(initialBpm || exercise.bpm),
+    [state, setState] = useState<
+      "idle" | "preparing" | "countdown" | "recording" | "analyzing" | "demo"
+    >("idle"),
+    [pulse, setPulse] = useState(-1),
+    [evidence, setEvidence] = useState<Evidence | null>(null),
+    [error, setError] = useState(""),
+    [wave, setWave] = useState<number[]>([]),
+    [pitch, setPitch] = useState("—"),
+    [url, setUrl] = useState(""),
+    [latency, setLatency] = useState(0),
+    [muteStep, setMuteStep] = useState(0),
+    [comparison, setComparison] = useState<MutingComparison | null>(null),
+    [repeat, setRepeat] = useState(false);
+  const engine = useRef<AudioEngine | null>(null),
+    timer = useRef<ReturnType<typeof setInterval> | null>(null),
+    audioBlob = useRef<Blob | null>(null),
+    urlRef = useRef(""),
+    alive = useRef(true),
+    offset = useRef(0),
+    baseline = useRef<{ samples: Float32Array; rate: number } | null>(null),
+    busy = useRef(false),
+    finishing = useRef(false),
+    generation = useRef(0),
+    modeRef = useRef(state);
+  modeRef.current = state;
+  const tabRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = tabRef.current,
+      note = row?.querySelector<HTMLElement>(".current");
+    if (
+      row &&
+      note &&
+      (note.offsetLeft < row.scrollLeft ||
+        note.offsetLeft + note.offsetWidth > row.scrollLeft + row.clientWidth)
+    )
+      row.scrollTo({
+        left: Math.max(0, note.offsetLeft - row.clientWidth / 3),
+        behavior: "smooth",
+      });
+  }, [pulse]);
+  const active = [
+      "recording",
+      "countdown",
+      "preparing",
+      "demo",
+      "analyzing",
+    ].includes(state),
+    next = recommend(progress),
+    currentNote =
+      exercise.notes.findLast((n) => n.beat <= pulse) || exercise.notes[0];
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      discard();
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    function visibility() {
+      if (document.hidden && busy.current) {
+        discard();
+        setState("idle");
+        setPulse(-1);
+        setError(
+          "Practice paused when the app went into the background. Start a new take for reliable timing.",
+        );
+      }
+    }
+    document.addEventListener("visibilitychange", visibility);
+    return () => document.removeEventListener("visibilitychange", visibility);
+  }, []);
+  function audio() {
+    return (engine.current ||= new AudioEngine());
+  }
+  function clearTimers() {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  }
+  function discard() {
+    generation.current++;
+    clearTimers();
+    const previous = engine.current;
+    engine.current = null;
+    busy.current = false;
+    finishing.current = false;
+    void previous?.close().catch(() => {});
+  }
+  async function demo() {
+    if (busy.current) return;
+    busy.current = true;
+    const run = ++generation.current,
+      session = audio();
+    setError("");
+    setEvidence(null);
+    setState("demo");
+    try {
+      const first = await session.playExercise(exercise, bpm);
+      if (!alive.current || run !== generation.current || first === undefined)
+        return;
+      timer.current = setInterval(() => {
+        if (!alive.current || run !== generation.current) return;
+        const elapsed = session.currentTime - first;
+        setPulse(Math.floor((elapsed * bpm) / 60));
+        if (elapsed >= (exercise.beats * 60) / bpm + 0.15) {
+          session.stopPlayback();
+          clearTimers();
+          busy.current = false;
+          setState("idle");
+          setPulse(-1);
+        }
+      }, 40);
+    } catch (e) {
+      if (alive.current && run === generation.current) {
+        busy.current = false;
+        setState("idle");
+        setError(String(e));
+      }
+    }
+  }
+  async function start() {
+    if (busy.current) return;
+    busy.current = true;
+    const run = ++generation.current,
+      session = audio();
+    setError("");
+    setEvidence(null);
+    setComparison(null);
+    setState("preparing");
+    try {
+      await session.prepareMicrophone((samples, rate) => {
+        if (!alive.current || run !== generation.current) return;
+        setWave(
+          Array.from(
+            { length: 64 },
+            (_, i) => samples[Math.floor((i * samples.length) / 64)] || 0,
+          ),
+        );
+        const p = detectPitch(samples, rate);
+        setPitch(
+          p && p.confidence > 0.8
+            ? noteName(Math.round(69 + 12 * Math.log2(p.frequency / 440)))
+            : "—",
+        );
+      });
+      if (!alive.current || run !== generation.current) {
+        await session.close();
+        return;
+      }
+      const capture = session.startCapture(),
+        first = await session.startMetronome(bpm),
+        boundary = first + (6 * 60) / bpm;
+      if (!alive.current || run !== generation.current) {
+        await session.close();
+        return;
+      }
+      offset.current = boundary - capture;
+      setPulse(-6);
+      setState("countdown");
+      timer.current = setInterval(() => {
+        if (!alive.current || run !== generation.current) return;
+        const elapsed = session.currentTime - boundary,
+          p = Math.floor((elapsed * bpm) / 60);
+        setPulse(p);
+        if (p >= 0) setState("recording");
+        if (elapsed >= (exercise.beats * 60) / bpm + 0.2)
+          void finish(false, session, run);
+      }, 40);
+    } catch (e) {
+      await session.close().catch(() => {});
+      if (engine.current === session) engine.current = null;
+      if (alive.current && run === generation.current) {
+        busy.current = false;
+        setState("idle");
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Microphone access failed. Check browser permissions and try again.",
+        );
+      }
+    }
+  }
+  async function finish(
+    cancel = false,
+    session = engine.current,
+    run = generation.current,
+  ) {
+    if (!session || finishing.current || run !== generation.current) return;
+    finishing.current = true;
+    clearTimers();
+    session.stopMetronome();
+    session.stopPlayback();
+    if (modeRef.current === "demo") {
+      generation.current++;
+      finishing.current = false;
+      busy.current = false;
+      setState("idle");
+      setPulse(-1);
+      return;
+    }
+    setState("analyzing");
+    try {
+      const captured = await session.stopCapture();
+      await session.close();
+      if (engine.current === session) engine.current = null;
+      if (!alive.current || run !== generation.current || cancel) return;
+      const from = Math.max(
+          0,
+          Math.round(offset.current * captured.sampleRate),
+        ),
+        to =
+          from +
+          Math.round(((exercise.beats * 60) / bpm + 0.2) * captured.sampleRate),
+        samples = captured.samples.slice(from, to);
+      audioBlob.current = wav(samples, captured.sampleRate);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = URL.createObjectURL(audioBlob.current);
+      setUrl(urlRef.current);
+      const result = analyzeRecording(
+        samples,
+        captured.sampleRate,
+        exercise,
+        bpm,
+        latency,
+        assessment,
+      );
+      setEvidence(result);
+      onAttempt({
+        id: crypto.randomUUID(),
+        exerciseId: exercise.id,
+        skill: exercise.skill,
+        at: new Date().toISOString(),
+        bpm,
+        seconds: Math.round(samples.length / captured.sampleRate),
+        evidence: result,
+      });
+      if (exercise.kind === "muting") {
+        if (muteStep === 0 && result.confidence !== "low") {
+          baseline.current = { samples, rate: captured.sampleRate };
+          setMuteStep(1);
+        } else if (
+          baseline.current &&
+          baseline.current.rate === captured.sampleRate
+        ) {
+          const compared = compareMuting(
+            baseline.current.samples,
+            samples,
+            captured.sampleRate,
+          );
+          setComparison(compared);
+          if (muteStep === 1 && compared.confidence !== "low") setMuteStep(2);
+        }
+      }
+    } catch (e) {
+      if (alive.current && run === generation.current)
+        setError(
+          e instanceof Error
+            ? e.message
+            : "The recording could not be analyzed. Please retry.",
+        );
+    } finally {
+      if (run === generation.current) {
+        busy.current = false;
+        finishing.current = false;
+        if (alive.current) {
+          setState("idle");
+          setPulse(-1);
+          setWave([]);
+          setPitch("—");
+        }
+      }
+    }
+  }
+  const previous = progress.attempts
+      .filter((a) => a.exerciseId === exercise.id && a.evidence.score !== null)
+      .slice(-2),
+    change =
+      previous.length === 2
+        ? previous[1].evidence.score! - previous[0].evidence.score!
+        : null;
+  return (
+    <section className="practice-page">
+      <button className="text-button back" onClick={onBack}>
+        <ArrowLeft size={16} /> Back to your journey
+      </button>
+      <div className="section-heading">
+        <div>
+          <div className="eyebrow">
+            PRACTICE ROOM / STAGE {exercise.stage.toString().padStart(2, "0")}
+          </div>
+          <h1>{exercise.title}</h1>
+          <p className="lede">{exercise.subtitle}</p>
+        </div>
+        <span className="pill">
+          <span
+            className={`status-dot ${state === "recording" ? "live" : ""}`}
+          />
+          {state === "recording" ? "Recording locally" : "On-device analysis"}
+        </span>
+      </div>
+      <div className="practice-layout">
+        <div>
+          <div className="practice-score">
+            <div className="section-heading">
+              <span className="eyebrow">
+                {state === "countdown"
+                  ? `COUNT IN · ${Math.max(1, pulse + 7)} / 6`
+                  : state === "recording"
+                    ? "YOUR TURN"
+                    : state === "demo"
+                      ? "LISTEN & FOLLOW"
+                      : "YOUR NEXT NOTES"}
+              </span>
+              <span className="mono">
+                6/8 <span className="muted">·</span> E MINOR
+              </span>
+            </div>
+            <div
+              ref={tabRef}
+              className="tablature"
+              aria-label="Exercise tablature, horizontally scrollable"
+            >
+              <div className="tab-labels">
+                {["e", "B", "G", "D", "A", "E"].map((s, i) => (
+                  <span key={i}>{s}</span>
+                ))}
+              </div>
+              {exercise.notes.map((n, i) => (
+                <div
+                  key={i}
+                  className={`tab-note ${pulse >= n.beat && pulse < n.beat + n.duration ? "current" : ""} ${i % 6 === 0 ? "bar-line" : ""}`}
+                >
+                  <div className="tab-count">{(n.beat % 6) + 1}</div>
+                  {Array.from({ length: 6 }, (_, s) => (
+                    <span key={s}>
+                      {n.string === s + 1 ? <b>{n.fret}</b> : <i />}
+                    </span>
+                  ))}
+                  <small>{n.finger || "○"}</small>
+                </div>
+              ))}
+            </div>
+            <Fretboard
+              selected={pulse >= 0 ? [currentNote] : exercise.notes.slice(0, 1)}
+              labels={false}
+            />
+            <div className="score-legend">
+              <span>Numbers = frets</span>
+              <span>○ = open string</span>
+              <span>Below = fretting finger</span>
+            </div>
+          </div>
+          <div className="transport">
+            <div className="tempo-control">
+              <label htmlFor="tempo">
+                PULSE / MIN <strong>{bpm}</strong>
+              </label>
+              <input
+                id="tempo"
+                type="range"
+                min="50"
+                max="180"
+                step="5"
+                disabled={active}
+                value={bpm}
+                onChange={(e) => setBpm(+e.target.value)}
+              />
+              <small>
+                Eighth-note pulse · {Math.round(bpm / 3)} dotted-quarter
+                beats/min
+              </small>
+            </div>
+            <div className="button-row">
+              {!active ? (
+                <>
+                  <button className="button primary large" onClick={start}>
+                    <Mic size={20} />
+                    {evidence ? "Record another take" : "Let’s play"}
+                  </button>
+                  <button className="button secondary large" onClick={demo}>
+                    <Play size={19} /> Hear it first
+                  </button>
+                </>
+              ) : (
+                <button
+                  disabled={state === "analyzing" || state === "preparing"}
+                  className="button primary large"
+                  onClick={() => void finish(true)}
+                >
+                  <Square size={18} />
+                  {state === "analyzing"
+                    ? "Listening back…"
+                    : state === "preparing"
+                      ? "Opening microphone…"
+                      : "Stop"}
+                </button>
+              )}
+            </div>
+            <button
+              className={`repeat-toggle ${repeat ? "selected" : ""}`}
+              aria-pressed={repeat}
+              title="Keep the next action on this phrase; recording always starts manually"
+              onClick={() => setRepeat((r) => !r)}
+            >
+              <Repeat2 size={16} />{" "}
+              {repeat ? "Stay on this phrase: on" : "Stay on this phrase"}
+            </button>
+          </div>
+          {ringingAvailable && (
+            <div className="why-note">
+              <label htmlFor="assessment-mode">
+                <strong>How are you playing this take?</strong>
+              </label>
+              <select
+                id="assessment-mode"
+                disabled={active}
+                value={assessment}
+                onChange={(e) => {
+                  setAssessment(e.target.value as "separated" | "ringing");
+                  setEvidence(null);
+                }}
+              >
+                <option value="separated">Separated notes (scored)</option>
+                <option value="ringing">Let notes ring (review only)</option>
+              </select>
+              <p>
+                For scored takes, release each note before the next. Natural
+                ringing performance can be recorded for listening, but cannot be
+                reliably scored.
+              </p>
+            </div>
+          )}
+          <div className="input-monitor">
+            <span className="mono">INPUT</span>
+            <svg
+              viewBox="0 0 640 40"
+              aria-label={
+                wave.length ? "Live microphone waveform" : "Microphone inactive"
+              }
+              preserveAspectRatio="none"
+            >
+              <line x1="0" y1="20" x2="640" y2="20" stroke="#41413c" />
+              <polyline
+                points={wave
+                  .map((v, i) => `${i * 10},${20 + v * 65}`)
+                  .join(" ")}
+                fill="none"
+                stroke="#e8a270"
+                strokeWidth="2"
+              />
+            </svg>
+            <strong>{pitch}</strong>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {evidence && (
+            <div
+              className={`performance-result ${evidence.score === null ? "uncertain" : ""}`}
+              role="status"
+            >
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">
+                    {assessment === "ringing"
+                      ? "RECORDING FOR YOUR REVIEW"
+                      : `WHAT WE HEARD · ${evidence.confidence.toUpperCase()} CONFIDENCE`}
+                  </span>
+                  <h2>
+                    {evidence.score === null
+                      ? assessment === "ringing"
+                        ? "Your performance, ready to hear."
+                        : "Let’s get a clearer take."
+                      : evidence.score >= 85
+                        ? "The phrase is coming together."
+                        : "Here’s your next small step."}
+                  </h2>
+                </div>
+                {evidence.score !== null && (
+                  <div className="result-score">
+                    {evidence.score}
+                    <small>/100</small>
+                  </div>
+                )}
+              </div>
+              <p>{evidence.message}</p>
+              <div className="result-metrics">
+                <span>
+                  <strong>
+                    {evidence.pitchAccuracy === null
+                      ? "—"
+                      : `${Math.round(evidence.pitchAccuracy)}%`}
+                  </strong>
+                  Note match
+                </span>
+                <span>
+                  <strong>
+                    {evidence.timingMs === null
+                      ? "—"
+                      : `${Math.round(evidence.timingMs)} ms`}
+                  </strong>
+                  Timing deviation
+                </span>
+                <span>
+                  <strong>
+                    {evidence.score === null ? "—" : evidence.missed}
+                  </strong>
+                  Missed notes
+                </span>
+                <span>
+                  <strong>
+                    {evidence.score === null ? "—" : evidence.extra}
+                  </strong>
+                  Extra events
+                </span>
+              </div>
+              {change !== null && (
+                <p className="muted">
+                  {change > 0
+                    ? `Up ${change}`
+                    : change < 0
+                      ? `Down ${Math.abs(change)}`
+                      : "Unchanged"}{" "}
+                  points from your previous scored take.
+                </p>
+              )}
+              {url && (
+                <div className="recording-playback">
+                  <audio src={url} controls />
+                  <button
+                    className="icon-button"
+                    aria-label="Download take"
+                    onClick={() =>
+                      audioBlob.current &&
+                      download("riff-take.wav", audioBlob.current)
+                    }
+                  >
+                    <Download size={18} />
+                  </button>
+                </div>
+              )}
+              <button
+                className="text-button"
+                onClick={() =>
+                  repeat ? void start() : onSelect(next.exerciseId, next.bpm)
+                }
+              >
+                {repeat
+                  ? "Repeat this phrase"
+                  : `Next: ${getExercise(next.exerciseId)?.title || "focused practice"}`}{" "}
+                <ArrowRight size={17} />
+              </button>
+              <p className="muted small">
+                {repeat
+                  ? "Same phrase, same tempo. Aim for three consistent takes."
+                  : next.reason}
+              </p>
+            </div>
+          )}
+          {exercise.kind === "muting" && (
+            <div className="muting-panel">
+              <span className="eyebrow">COMPARE YOUR OWN SOUND</span>
+              <h2>
+                {
+                  [
+                    "1. Open and ringing",
+                    "2. Light palm mute",
+                    "3. Stronger palm mute",
+                  ][muteStep]
+                }
+              </h2>
+              <p>
+                Play this same pattern{" "}
+                {
+                  [
+                    "without muting to establish your baseline",
+                    "with the side of your palm lightly touching the strings near the bridge",
+                    "with a little more contact near the bridge",
+                  ][muteStep]
+                }
+                . Keep microphone position, gain and tempo unchanged. We compare
+                decay, not hand position.
+              </p>
+              {comparison && (
+                <div className="feedback">
+                  <strong>
+                    {comparison.reductionPercent === null
+                      ? "Not enough clear attacks"
+                      : `${Math.round(comparison.reductionPercent)}% shorter decay than your baseline`}
+                  </strong>
+                  <p>{comparison.message}</p>
+                  <small>
+                    {comparison.confidence} confidence · compression and room
+                    echo can change this measurement
+                  </small>
+                </div>
+              )}
+              <button
+                className="text-button"
+                disabled={active}
+                onClick={() => {
+                  setMuteStep(0);
+                  baseline.current = null;
+                  setComparison(null);
+                }}
+              >
+                Reset baseline <Repeat2 size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+        <aside className="teacher-notes">
+          <span className="eyebrow">ON YOUR MUSIC STAND</span>
+          <h2>One note at a time.</h2>
+          <ol>
+            {exercise.instructions.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <div className="why-note">
+            <span className="eyebrow">THE CONNECTION</span>
+            <p>{exercise.why}</p>
+          </div>
+          <p className="headphone-note">
+            <Headphones size={22} /> Use headphones so the metronome doesn’t
+            enter your recording. Play with a clean tone.
+          </p>
+          <details>
+            <summary>
+              Input & timing <ChevronDown size={14} />
+            </summary>
+            <p className="muted">
+              Use your device microphone or an audio interface selected in your
+              browser. Acoustic arrival and interface delay affect timing.
+              Prefer wired headphones.
+            </p>
+            <label htmlFor="latency">Known input delay: {latency} ms</label>
+            <input
+              id="latency"
+              type="range"
+              min="0"
+              max="250"
+              step="5"
+              value={latency}
+              disabled={active}
+              onChange={(e) => setLatency(+e.target.value)}
+            />
+            <p className="small muted">
+              Leave at 0 unless you have measured your setup’s delay. RIFF never
+              silently shifts your take to make timing look better.
+            </p>
+          </details>
+        </aside>
+      </div>
+      <VideoReview />
+      {exercise.skill === "performance" && (
+        <div className="reference-audio">
+          <h2>The complete First Light study</h2>
+          <p className="muted">
+            Original synthesized reference · E minor · 100 eighth-note
+            pulses/min
+          </p>
+          <audio controls src="/first-light.wav" preload="none" />
+          <a className="text-button" href="/first-light.wav" download>
+            Download reference WAV <Download size={16} />
+          </a>
+        </div>
+      )}
+    </section>
+  );
 }

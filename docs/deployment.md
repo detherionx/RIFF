@@ -88,4 +88,8 @@ Railway's deployment [healthcheck](https://docs.railway.com/deployments/healthch
 - If the API is unavailable, local practice remains usable. Restore PostgreSQL from a provider backup if needed; API containers contain no durable data.
 - To roll back frontend/API code, redeploy the prior known-good commit. Database migrations are forward-only; take a backup before introducing a destructive migration and provide a tested repair migration.
 
-No public deployment is confirmed by these files. Deployment is complete only after a real HTTPS URL passes the checks above. Docker and database integration must be run on a host with those services available.
+Deployed on 18 October 2026: [RIFF](https://web-production-61a92.up.railway.app). Both Linux containers built and started on Railway; API readiness confirms database migration and connectivity. HTTPS and live database backup/isolation checks passed. Physical microphone/camera device checks remain in [verification.md](verification.md).
+
+Run the repeatable live check (creates and deletes only its own disposable test accounts):
+
+    node scripts/verify-deployment.mjs https://web-production-61a92.up.railway.app
