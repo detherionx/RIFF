@@ -1,0 +1,42 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      RIFF_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://riff:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/riff
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: riff
+      POSTGRES_USER: riff
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - riff-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riff -d riff"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  riff-data:
