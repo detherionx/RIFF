@@ -39,6 +39,7 @@ import {
 import Practice from "./practice";
 import Theory from "./theory";
 import Tuner from "./tuner";
+import AudioSetup from "./audio-setup";
 type Page =
   "journey" | "daily" | "theory" | "gym" | "progress" | "tuner" | "settings";
 const navigation = [
@@ -781,6 +782,7 @@ export default function Riff() {
                     Private by default. Portable when you need it.
                   </p>
                   <div className="settings-grid">
+                    <AudioSetup />
                     <section className="panel">
                       <div className="section-heading">
                         <h2>Your starting point</h2>

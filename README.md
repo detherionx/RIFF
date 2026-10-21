@@ -18,7 +18,8 @@ Open http://localhost:3000. No API key or account is required. Use headphones an
 - Find the Note, Interval Hunter, Build a Scale, Rhythm Lab and Chord Architect, with difficulty, retries and persistent results.
 - Browser pitch detection, onset/sequence alignment, missed/extra notes, timing, confidence gates and corrective recommendations.
 - Relative palm-muting decay comparison against your own baseline.
-- Camera capture, local video selection, synchronized audiovisual playback and manual review.
+- Four-pluck input checks, isolated target-note/pulse drills, and a diagnostic pause after repeated struggles.
+- Optional camera capture alongside the take, bounded memory-only silent replay and manual review. No video upload, import or download feature.
 - Versioned local progress, JSON import/export and explicit PostgreSQL backup via a private FastAPI service.
 - Responsive desktop/phone interface, installable manifest and cached app shell.
 
@@ -29,6 +30,8 @@ The complete original study is **First Light**, eight bars in E minor and 6/8. T
 This is a first beta, not a validated replacement for a human teacher. Scoring is designed for clean **separated monophonic notes**. Ringing arpeggios and full musical performances have a review-only mode because overlapping pitches cannot be graded reliably by this detector. Use the natural performance as your musical goal and separated takes to check accuracy.
 
 Camera feedback is manual. No visual technique model, arbitrary-song decomposition, cloud AI or recording upload is enabled. No recording leaves the browser. Automated tests cover synthetic signal behavior; real guitar/microphone combinations and physical iOS/Android devices still need validation.
+
+Unknown device delay suppresses combined playing scores and mastery changes. Pitch counts and relative pulse consistency remain available. A measured zero is distinct from an unknown delay. A four-pluck check validates simple detection, not hardware latency. See [diagnostic coaching and audit](docs/diagnostic-coaching.md) and the [separate local model benchmark](benchmarks/README.md).
 
 ## Verify
 

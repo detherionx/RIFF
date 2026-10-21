@@ -14,6 +14,9 @@ export const initialProgress = (): Progress => ({
   mastery: {},
 });
 const trusted = (attempt: Attempt) =>
+  attempt.evidence.diagnostic !== "input" &&
+  attempt.evidence.diagnostic !== "timing" &&
+  attempt.evidence.extra < Math.max(3, (getExercise(attempt.exerciseId)?.notes.length ?? Infinity) / 2) &&
   ["high", "medium"].includes(attempt.evidence.confidence) &&
   attempt.evidence.score !== null &&
   Number.isFinite(attempt.evidence.score) &&
@@ -95,7 +98,7 @@ export function recordAttempt(progress: Progress, attempt: Attempt): Progress {
     next.streak = previous.streak;
   }
   next.errors = !sufficient
-    ? ["Recording confidence is too low to assess this take."]
+    ? ["Input or timing needs checking before this take can assess progress."]
     : success
       ? []
       : [
@@ -159,6 +162,17 @@ export function recommend(
     unlocked(progress, latest.skill)
   ) {
     const exercise = getExercise(latest.exerciseId)!;
+    const struggling = progress.attempts.filter((a) => a.exerciseId === exercise.id).slice(-3);
+    if (latest.evidence.diagnostic === "timing")
+      return result(exercise.id, latest.bpm, "diagnostic",
+        latest.evidence.weakestTransition !== undefined
+          ? "Check the displayed destination note on its own, then return to the phrase. Unknown device delay prevents a timing score."
+          : "Compare four isolated picks with four detections, then practise equal gaps in the pulse drill. Timing includes unknown device delay; keep this tempo.");
+    if (latest.evidence.diagnostic === "input" ||
+        latest.evidence.extra >= Math.max(3, exercise.notes.length / 2) ||
+        (struggling.length >= 2 && struggling.every((a) => !clean(a))))
+      return result(exercise.id, latest.bpm, "diagnostic",
+        "Pause the retry loop. Check four isolated low E plucks, then practise one note or the pulse separately. Unknown input delay must not be treated as late playing.");
     if (!trusted(latest))
       return result(
         exercise.id,

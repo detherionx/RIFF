@@ -10,3 +10,4 @@ test-results/
 playwright-report/
 .pytest_cache/
 *.db
+benchmarks/dist/

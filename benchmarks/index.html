@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; object-src 'none'">
+<title>RIFF local detector benchmark</title>
+<style>body{font:18px system-ui;background:#171916;color:#eee;max-width:1000px;margin:48px auto;padding:24px}button{font:inherit;padding:12px;margin-right:12px}pre{white-space:pre-wrap;font-size:14px}p{line-height:1.5}</style>
+<h1>Local detector benchmark</h1>
+<p>Compare RIFF’s YIN baseline with Basic Pitch on four generated signals. No microphone, camera or uploads. Models load from this local server. Runs in a worker; stop releases its memory. These are engineering fixtures, not real guitar validation.</p>
+<button id="run">Run benchmark</button><button id="stop" disabled>Stop and release memory</button>
+<p id="status" role="status">Ready.</p><pre id="results"></pre>
+<script>
+let worker;
+const run = document.querySelector('#run'), stop = document.querySelector('#stop');
+function release(){worker?.terminate();worker=null;run.disabled=false;stop.disabled=true;}
+run.onclick=()=>{release();run.disabled=true;stop.disabled=false;document.querySelector('#status').textContent='Starting…';
+  worker=new Worker('./worker.js');
+  worker.onmessage=({data})=>{document.querySelector('#status').textContent=data.status;
+    if(data.results||data.error)document.querySelector('#results').textContent=JSON.stringify({...data,browser:navigator.userAgent},null,2);
+    if(data.status.startsWith('Complete')||data.error)release();};
+  worker.onerror=()=>{document.querySelector('#status').textContent='Worker failed. Check the local build.';release();};worker.postMessage('run');};
+stop.onclick=()=>{release();document.querySelector('#status').textContent='Stopped. Worker memory released.';};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&worker){release();document.querySelector('#status').textContent='Paused when hidden; run again.';}});
+window.addEventListener('pagehide',release);
+</script></html>

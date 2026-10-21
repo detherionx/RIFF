@@ -16,6 +16,7 @@ import {
   analyzeRecording,
   compareMuting,
   detectPitch,
+  checkInput,
   type MutingComparison,
 } from "@/lib/audio";
 import { recommend } from "@/lib/learning";
@@ -24,8 +25,10 @@ import type { Attempt, Evidence, Exercise, Progress } from "@/lib/types";
 import { download, wav } from "@/lib/storage";
 import Fretboard, { noteName } from "./fretboard";
 import VideoReview from "./video-review";
+import AudioSetup from "./audio-setup";
+import { diagnosticExercise, type Drill } from "@/lib/coaching";
 export default function Practice({
-  exercise,
+  exercise: sourceExercise,
   initialBpm,
   progress,
   onAttempt,
@@ -39,11 +42,15 @@ export default function Practice({
   onBack: () => void;
   onSelect: (id: string, bpm?: number) => void;
 }) {
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const [targetIndex, setTargetIndex] = useState(0);
+  const [inputCheck, setInputCheck] = useState<ReturnType<typeof checkInput> | null>(null);
+  const [delayMeasured, setDelayMeasured] = useState(false);
+  const [inputReady, setInputReady] = useState(false);
+  const [drillPasses, setDrillPasses] = useState<Record<Drill, number>>({ input: 0, note: 0, pulse: 0 });
+  const exercise = drill ? diagnosticExercise(sourceExercise, drill, targetIndex) : sourceExercise;
   const [assessment, setAssessment] = useState<"separated" | "ringing">(
     "separated",
-  );
-  const ringingAvailable = ["arpeggios", "transitions", "performance"].includes(
-    exercise.skill,
   );
   const [bpm, setBpm] = useState(initialBpm || exercise.bpm),
     [state, setState] = useState<
@@ -60,6 +67,7 @@ export default function Practice({
     [comparison, setComparison] = useState<MutingComparison | null>(null),
     [repeat, setRepeat] = useState(false);
   const engine = useRef<AudioEngine | null>(null),
+    phraseBpm = useRef(initialBpm || sourceExercise.bpm),
     timer = useRef<ReturnType<typeof setInterval> | null>(null),
     audioBlob = useRef<Blob | null>(null),
     urlRef = useRef(""),
@@ -167,6 +175,7 @@ export default function Practice({
     }
   }
   async function start() {
+    if (!inputReady) { setError("Complete the quiet and low E checks in Audio setup, then finish setup before playing."); return; }
     if (busy.current) return;
     busy.current = true;
     const run = ++generation.current,
@@ -269,11 +278,23 @@ export default function Practice({
         captured.sampleRate,
         exercise,
         bpm,
-        latency,
+        delayMeasured ? latency : null,
         assessment,
       );
+      if (drill === "input") {
+        const quiet = captured.samples.slice(Math.max(0, from - captured.sampleRate * 2), from);
+        const checked = checkInput(samples, quiet, captured.sampleRate);
+        setInputCheck(checked);
+        setDrillPasses((counts) => ({ ...counts, input: checked.passed ? counts.input + 1 : 0 }));
+        return;
+      }
       setEvidence(result);
-      onAttempt({
+      if (drill) {
+        const passed = result.diagnostic !== "input" && result.matched === 4 && result.extra === 0 &&
+          (drill !== "pulse" || (result.consistency ?? 0) >= 90);
+        setDrillPasses((counts) => ({ ...counts, [drill]: passed ? counts[drill] + 1 : 0 }));
+      }
+      if (!drill) onAttempt({
         id: crypto.randomUUID(),
         exerciseId: exercise.id,
         skill: exercise.skill,
@@ -282,7 +303,7 @@ export default function Practice({
         seconds: Math.round(samples.length / captured.sampleRate),
         evidence: result,
       });
-      if (exercise.kind === "muting") {
+      if (!drill && exercise.kind === "muting") {
         if (muteStep === 0 && result.confidence !== "low") {
           baseline.current = { samples, rate: captured.sampleRate };
           setMuteStep(1);
@@ -319,6 +340,19 @@ export default function Practice({
       }
     }
   }
+  function chooseDrill(value: Drill | null) {
+    if (busy.current) return;
+    if (value && !drill) phraseBpm.current = bpm;
+    if (value) setTargetIndex(evidence?.weakestTransition ?? (sourceExercise.notes.length > 1 ? 1 : 0));
+    setDrill(value);
+    setAssessment("separated");
+    setBpm(value ? 60 : phraseBpm.current);
+    setEvidence(null);
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = "";
+    audioBlob.current = null;
+    setUrl("");
+  }
   const previous = progress.attempts
       .filter((a) => a.exerciseId === exercise.id && a.evidence.score !== null)
       .slice(-2),
@@ -346,6 +380,21 @@ export default function Practice({
           {state === "recording" ? "Recording locally" : "On-device analysis"}
         </span>
       </div>
+      <div hidden={active}><AudioSetup onReady={setInputReady} /></div>
+      {!inputReady && <p role="status">Complete Audio setup before your first practice take.</p>}
+      <div className="why-note" aria-label="Diagnostic coach">
+        <strong>{drill ? "Work on one thing, then return to the phrase." : next.mode === "diagnostic" ? "Pause the retry loop: check what RIFF is hearing." : "Check the sound before changing your playing."}</strong>
+        <p>First check four isolated low E plucks. Then isolate a note or practise the pulse. Extra detections cannot tell us which hand movement caused them.</p>
+        <div className="button-row">
+          <button className="button secondary" disabled={active} onClick={() => chooseDrill("input")}>1. Check input</button>
+          <button className="button secondary" disabled={active} onClick={() => chooseDrill("note")}>2. Isolate target note</button>
+          <button className="button secondary" disabled={active} onClick={() => chooseDrill("pulse")}>3. Isolate pulse</button>
+          {drill && <button className="button secondary" disabled={active} onClick={() => chooseDrill(null)}>Return to {sourceExercise.title}</button>}
+        </div>
+        {inputCheck && <p role="status"><strong>{inputCheck.passed ? "Input check passed. " : "Input needs checking. "}</strong>{inputCheck.message}</p>}
+        {drill === "input" && inputCheck && url && <audio src={url} controls aria-label="Input check playback" />}
+        {drill && <p>Play four times at 60 pulses/min. Aim for four matching events and no extras on two tries before returning. {Math.min(2, drillPasses[drill])}/2 checks passed in a row{drill === "pulse" ? " (also requires attack evenness of at least 90/100)" : ""}. These drills do not award mastery.</p>}
+      </div>
       <div className="practice-layout">
         <div>
           <div className="practice-score">
@@ -360,7 +409,7 @@ export default function Practice({
                       : "YOUR NEXT NOTES"}
               </span>
               <span className="mono">
-                6/8 <span className="muted">·</span> E MINOR
+                {drill ? "FOUR ISOLATED PLUCKS" : "6/8 · E MINOR"}
               </span>
             </div>
             <div
@@ -378,7 +427,7 @@ export default function Practice({
                   key={i}
                   className={`tab-note ${pulse >= n.beat && pulse < n.beat + n.duration ? "current" : ""} ${i % 6 === 0 ? "bar-line" : ""}`}
                 >
-                  <div className="tab-count">{(n.beat % 6) + 1}</div>
+                  <div className="tab-count">{drill ? n.beat + 1 : (n.beat % 6) + 1}</div>
                   {Array.from({ length: 6 }, (_, s) => (
                     <span key={s}>
                       {n.string === s + 1 ? <b>{n.fret}</b> : <i />}
@@ -406,22 +455,21 @@ export default function Practice({
               <input
                 id="tempo"
                 type="range"
-                min="50"
-                max="180"
+                min="40"
+                max="200"
                 step="5"
-                disabled={active}
+                disabled={active || !!drill}
                 value={bpm}
                 onChange={(e) => setBpm(+e.target.value)}
               />
               <small>
-                Eighth-note pulse · {Math.round(bpm / 3)} dotted-quarter
-                beats/min
+                {drill ? "One pulse per second; pick on alternate pulses" : `Eighth-note pulse · ${Math.round(bpm / 3)} dotted-quarter beats/min`}
               </small>
             </div>
             <div className="button-row">
               {!active ? (
                 <>
-                  <button className="button primary large" onClick={start}>
+                  <button className="button primary large" disabled={!inputReady} onClick={start}>
                     <Mic size={20} />
                     {evidence ? "Record another take" : "Let’s play"}
                   </button>
@@ -454,7 +502,7 @@ export default function Practice({
               {repeat ? "Stay on this phrase: on" : "Stay on this phrase"}
             </button>
           </div>
-          {ringingAvailable && (
+          {!drill && (
             <div className="why-note">
               <label htmlFor="assessment-mode">
                 <strong>How are you playing this take?</strong>
@@ -520,7 +568,7 @@ export default function Practice({
                     {evidence.score === null
                       ? assessment === "ringing"
                         ? "Your performance, ready to hear."
-                        : "Let’s get a clearer take."
+                        : evidence.diagnostic === "timing" ? "Notes measured; timing is provisional." : "Let’s get a clearer take."
                       : evidence.score >= 85
                         ? "The phrase is coming together."
                         : "Here’s your next small step."}
@@ -541,7 +589,7 @@ export default function Practice({
                       ? "—"
                       : `${Math.round(evidence.pitchAccuracy)}%`}
                   </strong>
-                  Note match
+                  Expected notes matched
                 </span>
                 <span>
                   <strong>
@@ -549,21 +597,24 @@ export default function Practice({
                       ? "—"
                       : `${Math.round(evidence.timingMs)} ms`}
                   </strong>
-                  Timing deviation
+                  {delayMeasured ? "Timing deviation" : "Timing + unknown device delay"}
                 </span>
                 <span>
                   <strong>
-                    {evidence.score === null ? "—" : evidence.missed}
+                    {evidence.observed === undefined && evidence.score === null ? "—" : evidence.missed}
                   </strong>
                   Missed notes
                 </span>
                 <span>
                   <strong>
-                    {evidence.score === null ? "—" : evidence.extra}
+                    {evidence.observed === undefined && evidence.score === null ? "—" : evidence.extra}
                   </strong>
                   Extra events
                 </span>
               </div>
+              {evidence.matched !== undefined && <p>Pitch matches: {evidence.matched} / {evidence.expected} expected notes. Detected events: {evidence.observed}. Confidence describes the signal, not certainty about your technique.</p>}
+              {evidence.diagnostic === "timing" && <p>Provisional score: timing is uncalibrated, so this take does not change mastery. Use the pulse drill to practise even gaps; do not adjust the delay to improve the score.</p>}
+              {drill === "pulse" && evidence.consistency !== null && <p>Attack evenness: {evidence.consistency}/100. This measures variation around the pulse, not absolute lateness. Listen for equal gaps, then repeat at this tempo.</p>}
               {change !== null && (
                 <p className="muted">
                   {change > 0
@@ -589,17 +640,17 @@ export default function Practice({
                   </button>
                 </div>
               )}
-              <button
+              {!drill && <button
                 className="text-button"
                 onClick={() =>
-                  repeat ? void start() : onSelect(next.exerciseId, next.bpm)
+                  repeat ? void start() : next.mode === "diagnostic" ? chooseDrill(evidence.diagnostic === "timing" ? evidence.weakestTransition !== undefined ? "note" : "pulse" : "input") : onSelect(next.exerciseId, next.bpm)
                 }
               >
                 {repeat
                   ? "Repeat this phrase"
-                  : `Next: ${getExercise(next.exerciseId)?.title || "focused practice"}`}{" "}
+                  : next.mode === "diagnostic" ? evidence.diagnostic === "timing" ? "Next: focused drill" : "Next: check input" : `Next: ${getExercise(next.exerciseId)?.title || "focused practice"}`}{" "}
                 <ArrowRight size={17} />
-              </button>
+              </button>}
               <p className="muted small">
                 {repeat
                   ? "Same phrase, same tempo. Aim for three consistent takes."
@@ -685,6 +736,7 @@ export default function Practice({
               Prefer wired headphones.
             </p>
             <label htmlFor="latency">Known input delay: {latency} ms</label>
+            <label><input type="checkbox" checked={delayMeasured} disabled={active} onChange={(e) => setDelayMeasured(e.target.checked)} /> I independently measured this setup’s delay (including a measured 0 ms).</label>
             <input
               id="latency"
               type="range"
@@ -698,11 +750,12 @@ export default function Practice({
             <p className="small muted">
               Leave at 0 unless you have measured your setup’s delay. RIFF never
               silently shifts your take to make timing look better.
+              A pluck-to-click exercise includes your reaction time and cannot measure hardware delay. Recheck after changing devices or Bluetooth connections.
             </p>
           </details>
         </aside>
       </div>
-      <VideoReview />
+      <VideoReview captureActive={state === "countdown" || state === "recording"} />
       {exercise.skill === "performance" && (
         <div className="reference-audio">
           <h2>The complete First Light study</h2>

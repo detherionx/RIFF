@@ -2662,6 +2662,10 @@ main {
 .teacher-notes li {
   font-size: 14px;
 }
+[aria-label="Audio setup"] { margin-bottom: 24px; overflow-wrap: anywhere; }
+[aria-label="Audio setup"] select { max-width: 100%; margin: 8px 0; padding: 10px; color: inherit; background: var(--surface, #17191d); border: 1px solid #555; border-radius: 8px; }
+[aria-label="Audio setup"] meter { width: min(260px, 60%); height: 24px; vertical-align: middle; }
+[aria-label="Audio setup"] .button-row { margin: 12px 0; flex-wrap: wrap; }
 .tab-labels span,
 .tab-note > span {
   height: 28px;

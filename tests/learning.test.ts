@@ -78,7 +78,7 @@ test("null or low-confidence scores never grant mastery or tempo progress", () =
   progress = recordAttempt(progress, low);
   assert.equal(progress.mastery.strings?.value, 0);
   assert.equal(progress.mastery.strings?.bestBpm, 0);
-  assert.equal(recommend(progress).mode, "consolidation");
+  assert.equal(recommend(progress).mode, "diagnostic");
 });
 test("weak full-phrase transition becomes a playable bridge then rejoins the phrase", () => {
   let progress = mastered();

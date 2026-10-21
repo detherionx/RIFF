@@ -36,6 +36,10 @@ export type DetectedNote = {
   confidence: number;
 };
 export type Evidence = {
+  diagnostic?: "input" | "timing" | "practice";
+  matched?: number;
+  expected?: number;
+  observed?: number;
   confidence: "high" | "medium" | "low";
   score: number | null;
   pitchAccuracy: number | null;
@@ -85,6 +89,7 @@ export type Recommendation = {
     | "acquisition"
     | "consolidation"
     | "remediation"
+    | "diagnostic"
     | "review"
     | "progression"
     | "performance";

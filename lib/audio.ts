@@ -1,4 +1,5 @@
 import type { DetectedNote, Evidence, Exercise } from "./types";
+import { inputConstraints, inputError, loadInput } from "./input";
 
 const midiOf = (frequency: number) => 69 + 12 * Math.log2(frequency / 440);
 const rms = (samples: Float32Array, start = 0, end = samples.length) => {
@@ -147,7 +148,7 @@ export function extractNotes(
   return notes;
 }
 
-function recordingQuality(samples: Float32Array) {
+export function recordingQuality(samples: Float32Array) {
   let clipped = 0,
     invalid = false;
   for (const value of samples) {
@@ -167,10 +168,11 @@ export function analyzeRecording(
   sampleRate: number,
   exercise: Exercise,
   bpm: number,
-  latencyMs = 0,
+  latencyMs: number | null = null,
   mode: "separated" | "ringing" = "separated",
 ): Evidence {
   const insufficient = (message: string): Evidence => ({
+    diagnostic: "input",
     confidence: "low",
     score: null,
     pitchAccuracy: null,
@@ -189,7 +191,7 @@ export function analyzeRecording(
     sampleRate < 8000 ||
     !Number.isFinite(bpm) ||
     bpm <= 0 ||
-    !Number.isFinite(latencyMs) ||
+    (latencyMs !== null && (!Number.isFinite(latencyMs) || latencyMs < 0 || latencyMs > 250)) ||
     !exercise.notes.length
   )
     return insufficient(
@@ -244,7 +246,7 @@ export function analyzeRecording(
       const timeCost = Math.min(
         0.4,
         (Math.abs(
-          detected[j - 1].time - latencyMs / 1000 - expected[i - 1].beat * beat,
+          detected[j - 1].time - (latencyMs ?? 0) / 1000 - expected[i - 1].beat * beat,
         ) /
           beat) *
           0.2,
@@ -265,6 +267,7 @@ export function analyzeRecording(
     correct = 0;
   const errors: { index: number; error: number }[] = [];
   const wrong: number[] = [];
+  const substitutions: { index: number; heard: number }[] = [];
   while (i || j) {
     const action = path[i][j];
     if (action === 1) {
@@ -278,12 +281,15 @@ export function analyzeRecording(
       const index = i - 1;
       if (Math.abs(expected[index].midi - detected[j - 1].midi) <= 0.5)
         correct++;
-      else wrong.push(index);
+      else {
+        wrong.push(index);
+        substitutions.push({ index, heard: detected[j - 1].midi });
+      }
       errors.push({
         index,
         error:
           (detected[j - 1].time -
-            latencyMs / 1000 -
+            (latencyMs ?? 0) / 1000 -
             expected[index].beat * beat) *
           1000,
       });
@@ -291,7 +297,7 @@ export function analyzeRecording(
       j--;
     }
   }
-  const pitchAccuracy = Math.round((100 * correct) / Math.max(n, m));
+  const pitchAccuracy = Math.round((100 * correct) / n);
   const timingMs = errors.length
     ? Math.round(mean(errors.map((item) => Math.abs(item.error))))
     : null;
@@ -309,27 +315,44 @@ export function analyzeRecording(
       ? "high"
       : "medium";
   const score = Math.round(
-    pitchAccuracy * 0.7 +
+    (100 * correct / Math.max(n, m)) * 0.7 +
       clamp(100 - ((timingMs ?? 1000) / (beat * 1000)) * 130, 0, 100) * 0.3,
   );
   const worst = errors
     .filter((item) => item.index > 0)
     .sort((a, b) => Math.abs(b.error) - Math.abs(a.error))[0];
-  const weakestTransition = wrong.find((index) => index > 0) ?? worst?.index;
+  // A periodic signal can still be fragmented, overlapping, or the wrong source.
+  // honey: conservative heuristic; tune only against annotated real-guitar takes.
+  const ambiguous = extra >= Math.max(3, n / 2) ||
+    detected.filter((note) => note.duration < 0.09).length > m * 0.3;
+  const weakestTransition = wrong.find((index) => index > 0) ??
+    (latencyMs !== null ? worst?.index : undefined);
   let message = `Matched ${correct} of ${n} notes. `;
+  if (ambiguous)
+    return {
+      ...insufficient(`Detected ${m} events for ${n} notes, with ${correct} pitch matches. Extra events may be picking, ringing strings or detector splits. Run the four-pluck input check before repeating this bridge. This take will not change mastery.`),
+      matched: correct, expected: n, observed: m, missed, extra,
+    };
   if (missed || extra)
-    message += `${missed} missing, ${extra} extra. Slow down and keep the full sequence. `;
-  else if (pitchAccuracy < 90)
-    message += "Check the highlighted frets, then repeat slowly. ";
-  else if ((timingMs ?? 0) > beat * 180)
+    message += `${missed} missing, ${extra} extra detections. Replay and count your picks. If the count disagrees, check input before changing tempo. `;
+  else if (substitutions.length) {
+    const mismatch = substitutions.at(-1)!, target = expected[mismatch.index];
+    const name = (midi: number) => `${["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][midi % 12]}${Math.floor(midi / 12) - 1}`;
+    message += `At note ${mismatch.index + 1}, expected ${name(target.midi)} (string ${target.string}, fret ${target.fret}); detected ${name(mismatch.heard)}. Check tuning, then isolate that note. `;
+  }
+  else if (latencyMs !== null && (timingMs ?? 0) > beat * 180)
     message += "The notes are there; place each attack on the pulse. ";
   else message += "Repeat once more to show this is consistent. ";
-  message += latencyMs
+  message += latencyMs !== null
     ? "Timing uses your latency adjustment."
-    : "Timing includes uncalibrated device latency; treat small differences cautiously.";
+    : "Timing includes unknown device delay. Pitch and event counts are shown separately; no combined score or mastery change is assigned.";
   return {
+    diagnostic: latencyMs === null ? "timing" : "practice",
+    matched: correct,
+    expected: n,
+    observed: m,
     confidence,
-    score,
+    score: latencyMs === null ? null : score,
     pitchAccuracy,
     timingMs,
     missed,
@@ -338,6 +361,28 @@ export function analyzeRecording(
     weakestTransition,
     message,
   };
+}
+
+/** Controlled input check, not a test of playing skill or physical latency. */
+export function checkInput(samples: Float32Array, quiet: Float32Array, sampleRate: number) {
+  const signal = recordingQuality(samples), noise = recordingQuality(quiet);
+  const failed = (message: string) => ({ passed: false, message });
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 ||
+      quiet.length < sampleRate || samples.length < sampleRate * 4 ||
+      signal.invalid || noise.invalid)
+    return failed("Input check was incomplete. Try again with this tab in the foreground.");
+  if (signal.clipped > 0.005 || noise.clipped > 0.005)
+    return failed("Input is clipping. Lower the input gain, then repeat the check.");
+  if (signal.level < 0.003)
+    return failed("The guitar is too quiet. Check the selected input and raise the USB dry output level or input gain.");
+  if (noise.level > 0.003 || signal.level < noise.level * 4)
+    return failed("Sound was present during the quiet count-in. Use headphones, quiet the room and keep the strings still during the count-in.");
+  const notes = extractNotes(samples, sampleRate);
+  if (notes.length !== 4)
+    return failed(`Heard ${notes.length} events for four plucks. If you picked exactly four times, detection is unreliable with this setup. Use a clean tone and stop each note before the next; retry without changing tempo.`);
+  if (notes.some((note) => note.midi !== 40 || note.confidence < 0.9))
+    return failed("Four events were heard, but not four stable low E notes. Check standard tuning and use only the thickest open string. The detector may also be mistaken.");
+  return { passed: true, message: "Four stable low E events heard with a quiet background. This setup passed a simple check; it does not validate overlapping notes or measure device delay. Try the targeted drill, then return to the bridge." };
 }
 
 export type MutingComparison = {
@@ -453,6 +498,9 @@ export class AudioEngine {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private input: MediaStreamAudioSourceNode | null = null;
+  private splitter: ChannelSplitterNode | null = null;
+  private generation = 0;
+  get inputInfo() { return this.stream?.getAudioTracks()[0]?.getSettings(); }
   private worklet: AudioWorkletNode | null = null;
   private chunks: Float32Array[] = [];
   private recording = false;
@@ -477,24 +525,24 @@ export class AudioEngine {
 
   async prepareMicrophone(
     onFrame?: (samples: Float32Array, sampleRate: number) => void,
+    selection = loadInput(),
   ) {
+    if (!selection) throw new Error("Choose your input in Audio setup first.");
+    const generation = this.generation;
     const context = await this.ready();
     if (!navigator.mediaDevices?.getUserMedia)
       throw new Error(
         "Microphone access requires HTTPS or localhost in a supported browser.",
       );
     if (this.worklet) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-      },
-      video: false,
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(inputConstraints(selection)).catch((error) => { throw new Error(inputError(error)); });
     try {
+      if (generation !== this.generation) throw new Error("Audio setup was cancelled.");
+      const settings = stream.getAudioTracks()[0].getSettings();
+      if (settings.deviceId !== selection.deviceId) throw new Error("The browser did not open the selected input. Select it again; no fallback is allowed.");
+      if (selection.channel >= (settings.channelCount ?? 1)) throw new Error("This input does not expose that channel. Select channel 1 or a different Windows audio endpoint.");
       await context.audioWorklet.addModule("/audio-worklet.js");
+      if (generation !== this.generation) throw new Error("Audio setup was cancelled.");
       this.stream = stream;
       this.input = context.createMediaStreamSource(stream);
       this.worklet = new AudioWorkletNode(context, "riff-capture");
@@ -539,7 +587,9 @@ export class AudioEngine {
         }
       };
       // The processor writes zeros to its output: microphone is never monitored.
-      this.input.connect(this.worklet);
+      this.splitter = context.createChannelSplitter(settings.channelCount ?? 1);
+      this.input.connect(this.splitter);
+      this.splitter.connect(this.worklet, selection.channel, 0);
       this.worklet.connect(context.destination);
     } catch (error) {
       stream.getTracks().forEach((track) => track.stop());
@@ -672,6 +722,7 @@ export class AudioEngine {
     this.voices.clear();
   }
   async close() {
+    this.generation++;
     if (this.closing) return this.closing;
     this.closing = (async () => {
       this.stopMetronome();
@@ -679,11 +730,13 @@ export class AudioEngine {
       if (this.recording) await this.stopCapture();
       this.worklet?.disconnect();
       this.input?.disconnect();
+      this.splitter?.disconnect();
       this.stream?.getTracks().forEach((track) => track.stop());
       if (this.context?.state !== "closed") await this.context?.close();
       this.context = null;
       this.worklet = null;
       this.input = null;
+      this.splitter = null;
       this.stream = null;
     })();
     try {

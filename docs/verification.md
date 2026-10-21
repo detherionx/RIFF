@@ -1,5 +1,9 @@
 # Release verification
 
+## Local diagnostic-coaching change — 19 October 2026
+
+47 TypeScript tests, strict type checking and production build passed. Python API: 11 passed, one database integration test skipped. Chromium inspection verified diagnostic drill controls and note/count targets. The separate Basic Pitch/YIN browser benchmark completed. Camera teardown, size limits and late callbacks were verified with mocks; no personal recording or physical-device validation was performed. These results apply to this local change, not the deployed release. See [audit and remaining acceptance work](diagnostic-coaching.md).
+
 ## Automated
 
 18 October 2026: 37 TypeScript tests passed. All 11 Python API tests passed in GitHub Actions against PostgreSQL 18; locally, 10 passed and the database integration test skipped without a local database. Production build passed on Windows and in Railway's Linux container. Live HTTPS smoke checks passed against the deployed PostgreSQL-backed API: authentication, exact backup/restore, account isolation, validation, rejected-write preservation and account deletion. Test accounts were removed.

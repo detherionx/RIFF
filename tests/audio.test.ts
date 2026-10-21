@@ -7,6 +7,7 @@ import {
   compareMuting,
   detectPitch,
   extractNotes,
+  checkInput,
 } from "../lib/audio";
 import type { Exercise } from "../lib/types";
 
@@ -122,7 +123,7 @@ test("rhythmic muted attacks remain distinct with decaying tails", () => {
   });
 });
 test("clean sequence gets measured high-quality evidence", () => {
-  const evidence = analyzeRecording(sequence(correct), rate, exercise, 120);
+  const evidence = analyzeRecording(sequence(correct), rate, exercise, 120, 0);
   assert.equal(evidence.pitchAccuracy, 100);
   assert.equal(evidence.missed, 0);
   assert.equal(evidence.extra, 0);
@@ -150,7 +151,7 @@ test("alignment counts an extra attack without shifting the sequence", () => {
   );
   assert.equal(evidence.extra, 1);
   assert.equal(evidence.missed, 0);
-  assert.equal(evidence.pitchAccuracy, 80);
+  assert.equal(evidence.pitchAccuracy, 100);
 });
 test("silence and clipping abstain rather than manufacturing a score", () => {
   for (const samples of [
@@ -180,6 +181,35 @@ test("timing retains global lateness unless explicitly calibrated", () => {
   const calibrated = analyzeRecording(late, rate, exercise, 120, 150);
   assert.ok(raw.timingMs! >= 140);
   assert.ok(calibrated.timingMs! <= 20);
+  assert.equal(raw.diagnostic, "timing");
+  assert.equal(calibrated.diagnostic, "practice");
+});
+
+test("unknown latency and a measured zero remain different", () => {
+  assert.equal(analyzeRecording(sequence(correct), rate, exercise, 120).score, null);
+  assert.equal(analyzeRecording(sequence(correct), rate, exercise, 120).diagnostic, "timing");
+  assert.equal(analyzeRecording(sequence(correct), rate, exercise, 120, 0).diagnostic, "practice");
+});
+
+test("many extra events abstain before blaming playing or selecting a transition", () => {
+  const signal = sequence(Array.from({ length: 8 }, (_, i) => ({ midi: exercise.notes[i % 4].midi, time: i * 0.5 })), 4.2);
+  const result = analyzeRecording(signal, rate, exercise, 120, 0);
+  assert.equal(result.diagnostic, "input");
+  assert.equal(result.score, null);
+  assert.equal(result.observed, 8);
+  assert.equal(result.weakestTransition, undefined);
+});
+
+test("four-pluck check requires quiet background, clean signal and exactly four low E events", () => {
+  const quiet = new Float32Array(rate * 2);
+  const plucks = [0, 2, 4, 6].map((time) => ({ midi: 40, time }));
+  assert.equal(checkInput(sequence(plucks, 8), quiet, rate).passed, true);
+  assert.equal(checkInput(sequence(plucks.slice(1), 8), quiet, rate).passed, false);
+  assert.equal(checkInput(sequence([...plucks, { midi: 40, time: 7 }], 8), quiet, rate).passed, false);
+  assert.equal(checkInput(sequence(plucks.map((n) => ({ ...n, midi: 45 })), 8), quiet, rate).passed, false);
+  assert.equal(checkInput(sequence(plucks, 8), new Float32Array(rate * 2).fill(0.02), rate).passed, false);
+  assert.equal(checkInput(new Float32Array(rate * 8).fill(1), quiet, rate).passed, false);
+  assert.equal(checkInput(sequence(plucks, 8), quiet.subarray(0, 10), rate).passed, false);
 });
 test("ringing arpeggio review never assigns unreliable pitch accuracy", () => {
   const samples = new Float32Array(rate * 3);

@@ -409,7 +409,7 @@ export function getExercise(id: string): Exercise | undefined {
     })),
     instructions: [
       "Repeat these two notes slowly, with an even gap.",
-      "Prepare the second finger before releasing the first.",
+      "For scoring, stop each note before picking the next string. Open strings need no fretting finger.",
       "Two clean takes will bring you back to the full phrase.",
     ],
     why: `A focused bridge repairs the change at notes ${index}–${index + 1} of ${source.title}.`,

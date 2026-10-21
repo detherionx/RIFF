@@ -1,5 +1,7 @@
 # Intelligence decisions and validation boundary
 
+19 October update: a separate, optional browser benchmark now compares the existing YIN extractor with Basic Pitch on generated signals. See [measured results and limits](../benchmarks/README.md). The practice app still loads no trained model and makes no real-guitar accuracy claim.
+
 Research checked 18 October 2026. This release ships deterministic browser DSP and an evidence-driven curriculum engine. It ships no trained audio or vision models, ONNX runtime, WebGPU inference, generative coaching service or automatic hand-position diagnosis. Audio/video review remains useful without model downloads.
 
 | Candidate | Useful next capability | Decision and cost |

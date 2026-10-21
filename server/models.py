@@ -15,6 +15,10 @@ class Contract(BaseModel):
 
 
 class Evidence(Contract):
+    diagnostic: Literal['input', 'timing', 'practice'] | None = None
+    matched: Count | None = None
+    expected: Count | None = None
+    observed: Count | None = None
     confidence: Literal['high', 'medium', 'low']
     score: Percent | None
     pitchAccuracy: Percent | None
@@ -24,6 +28,16 @@ class Evidence(Contract):
     consistency: Percent | None
     weakestTransition: Annotated[int, Field(ge=0, le=10_000)] | None = None
     message: Text
+
+    @model_validator(mode='before')
+    @classmethod
+    def diagnostic_fields_are_omitted_or_present(cls, value):
+        if isinstance(value, dict) and any(
+            key in value and value[key] is None
+            for key in ('diagnostic', 'matched', 'expected', 'observed')
+        ):
+            raise ValueError('Optional diagnostic fields must be omitted rather than null')
+        return value
 
 
 class Attempt(Contract):

@@ -36,8 +36,8 @@ Requests are bounded to 1 MiB before parsing, at most 500 attempts, known skills
 ## Analysis extension seams
 
 1. Keep fast monophonic pitch, onset and timing measurement local. Measurements carry confidence; uncertain input does not earn mastery.
-2. Add a server evaluation adapter only for analyses with measured accuracy improvements over the local baseline. Version its evidence contract, retain input provenance, benchmark against annotated performances and expose limitations.
-3. Add a recording store only when private S3-compatible storage is configured. Require per-upload consent, account-scoped object keys, verified MIME/container type, maximum bytes and duration, expiring signed access, retention and deletion. The current deployment deliberately has no public bucket, upload route or fake analysis result.
-4. Place expensive analysis behind a bounded background queue, with job ownership checks, cancellation and explicit failure states. Add paid model coaching only as optional interpretation of measured evidence; never let plausible prose invent notes or observed technique.
+2. Benchmark candidate models in a browser worker before adding them to practice. Keep the production dependency graph independent of benchmark packages. Version evidence and compare against annotated performances, including false positives and abstention.
+3. Video stays ephemeral: no recording store, upload route, persistent browser storage or export feature. Stop tracks and discard clips on hidden tabs, page exit, camera off, replacement and failure. The app cannot prevent operating-system swapping or an external screen recorder; the guarantee is about RIFF's own data handling.
+4. Cloud AI is not part of the current loop. Only consider optional interpretation of explicitly approved, minimized numeric summaries after local approaches show a measured gap. No raw audio/video transmission or technique inference is authorized by this design.
 
 API lifecycle follows [FastAPI lifespan guidance](https://fastapi.tiangolo.com/advanced/events/); pooled transactions use [Psycopg connection pools](https://www.psycopg.org/psycopg3/docs/advanced/pool.html).

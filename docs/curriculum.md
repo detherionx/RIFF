@@ -8,6 +8,8 @@ Every `beat` and `duration` is an **eighth-note pulse**. `bpm` means eighth-note
 
 ## Progress decisions
 
+Diagnostic coaching now takes priority over tempo reduction when input/timing is uncertain, extra-event counts are large, or the last two/three attempts of an exercise all failed. It preserves tempo and offers a four-pluck input check, target-note drill and pulse drill. Unknown device delay makes a new take provisional regardless of score. Only trusted, explicitly calibrated new takes can change mastery. Legacy attempts remain readable; ambiguous legacy extra-event counts are also excluded from new progress decisions. Drill successes are session-only and cannot establish full-phrase mastery.
+
 `initialProgress()` returns fresh state. `recordAttempt` is immutable, rejects duplicate IDs and malformed dates/tempos, and keeps the latest 500 attempts. Full-exercise takes scoring at least 85 with medium or high confidence add 30 mastery points; lower trusted scores subtract 10. Three successful takes reach the 80-point prerequisite threshold. Low confidence and null scores never increase or decrease demonstrated mastery. This is a transparent practice heuristic, not a validated educational assessment.
 
 Prerequisites form a directed graph: string navigation unlocks independence, rhythm and theory; theory unlocks intervals; independence plus rhythm unlock arpeggios; intervals plus arpeggios unlock changes; changes unlock muting, then performance. Learners may explore any exercise, but cannot gain mastery in a dependent skill before its foundations are demonstrated.
