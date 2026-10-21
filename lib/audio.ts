@@ -78,12 +78,14 @@ export function extractNotes(
   const window = Math.round(sampleRate * 0.075);
   const notes: DetectedNote[] = [];
   let current: DetectedNote | null = null;
-  let previousLevel = 0,
-    silentFrames = 0,
+  const recentLevels: number[] = [];
+  let silentFrames = 0,
     pendingMidi = -1,
     pendingFrames = 0;
   let pendingTime = 0,
     lastAttack = -1;
+  let consumedAttack = -1;
+  let quietFrames = 0, separated = true;
   let confidenceSum = 0,
     frameCount = 0;
   const finish = (time: number) => {
@@ -99,11 +101,16 @@ export function extractNotes(
   for (let offset = 0; offset + hop <= samples.length; offset += hop) {
     const time = offset / sampleRate;
     const level = rms(samples, offset, offset + hop);
+    quietFrames = level < 0.003 ? quietFrames + 1 : 0;
+    // Match the three-hop note-end rule; a single quiet hop is only an envelope ripple.
+    if (quietFrames >= 3) separated = true;
     const attack =
       level > 0.008 &&
-      level > Math.max(0.003, previousLevel) * 1.8 &&
+      level > Math.max(0.003, ...recentLevels) * 1.8 &&
       time - lastAttack > 0.085;
-    previousLevel = level;
+    // Reject single-hop envelope ripples; preserve genuinely renewed attacks.
+    recentLevels.push(level);
+    if (recentLevels.length > 3) recentLevels.shift();
     if (attack) lastAttack = time;
     const pitch =
       level >= 0.003
@@ -119,9 +126,13 @@ export function extractNotes(
     }
     silentFrames = 0;
     const midi = Math.round(midiOf(pitch.frequency));
+    // Pitch recovery in a decaying tail is not evidence of a new pick.
+    if (!current && notes.length && !separated && !(lastAttack > consumedAttack && time - lastAttack <= 0.12)) continue;
     if (!current || attack) {
       finish(time);
       current = { midi, time, duration: 0, confidence: pitch.confidence };
+      consumedAttack = lastAttack;
+      separated = false;
       pendingFrames = 0;
     } else if (midi !== current.midi) {
       if (pendingMidi !== midi) {

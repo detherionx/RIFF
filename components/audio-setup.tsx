@@ -7,7 +7,7 @@ import { noteName } from "./fretboard";
 const checks = [
   { name: "Quiet baseline", seconds: 3, midi: null, instruction: "Mute all six strings. Do not play for three seconds." },
   ...[40, 45, 50, 55, 59, 64].map((midi, i) => ({ name: `String ${6 - i}: ${noteName(midi)}`, seconds: 8, midi,
-    instruction: `Pick open string ${6 - i} four times, about two seconds apart. Stop each note before the next pick. Start as soon as the countdown appears.` })),
+    instruction: `After the three-second preparation, pick open string ${6 - i} four times, about two seconds apart. Stop each note before the next pick.` })),
   { name: "Fretted C3", seconds: 8, midi: 48, instruction: "String 5, fret 3. Pick four times, about two seconds apart. Stop each note before the next pick." },
   { name: "Sustain", seconds: 5, midi: 40, instruction: "Pick the open low E once and let it ring for five seconds. This checks whether one pick becomes several detections." },
   { name: "Overlap", seconds: 5, midi: null, instruction: "Pick low E, then A while E still rings. This demonstrates the single-note detector's limit; no performance score is awarded." },
@@ -65,7 +65,7 @@ export default function AudioSetup({ onReady }: { onReady?: (ready: boolean) => 
   }
   async function connect() {
     if (!selection) return;
-    stop(); qualified.current = false; onReady?.(false); setError(""); setResults([]); setPending(true);
+    stop(); qualified.current = false; onReady?.(false); setError(""); setResults([]); setStep(0); setPending(true);
     const run = generation.current, session = new AudioEngine(); engine.current = session;
     try {
       await session.prepareMicrophone((samples, rate) => {
@@ -89,15 +89,16 @@ export default function AudioSetup({ onReady }: { onReady?: (ready: boolean) => 
     const run = generation.current, check = checks[step];
     setError("");
     try {
-      const start = session.startCapture(); setRemaining(check.seconds);
+      const start = session.startCapture(); setRemaining(check.seconds + 3);
       timer.current = setInterval(async () => {
         if (run !== generation.current) return;
-        const left = check.seconds - (session.currentTime - start); setRemaining(Math.max(0, Math.ceil(left)));
+        const left = check.seconds + 3 - (session.currentTime - start); setRemaining(Math.max(0, Math.ceil(left)));
         if (left > 0) return;
         clearInterval(timer.current!); timer.current = null;
         try {
           const capture = await session.stopCapture();
           if (run !== generation.current) return;
+          capture.samples = capture.samples.slice(Math.round(3 * capture.sampleRate));
           const q = recordingQuality(capture.samples), notes = extractNotes(capture.samples, capture.sampleRate);
           const matches = notes.filter((n) => n.midi === check.midi).length;
           let report = `${check.name}: ${notes.length} detected events; ${matches} expected-pitch matches. `;
@@ -135,7 +136,9 @@ export default function AudioSetup({ onReady }: { onReady?: (ready: boolean) => 
     {connected && <><p>{info}</p><label>Input level <meter min={-100} max={0} low={-50} high={-3} optimum={-18} value={level} /> {level.toFixed(0)} dBFS</label><p role="status">{quality} · {pitch}</p>
       <p>First run the quiet baseline, then four low E picks. These check measurement quality, not skill. The other tests help us investigate your actual instrument.</p>
       <label>Hardware test <select disabled={remaining !== null} value={step} onChange={(e) => setStep(Number(e.target.value))}>{checks.map((c, i) => <option key={c.name} value={i}>{c.name}</option>)}</select></label>
-      <p>{checks[step].instruction}</p><button className="button primary" disabled={remaining !== null || (step > 0 && !baselineReady)} onClick={measure}>{remaining === null ? `Run ${checks[step].name}` : `Playing window: ${remaining}s`}</button>
+      <p>{checks[step].instruction}</p>
+      {step > 0 && !baselineReady && <p role="status">Run Quiet baseline first to enable this test.</p>}
+      <button className="button primary" disabled={remaining !== null || (step > 0 && !baselineReady)} onClick={measure}>{remaining === null ? `Run ${checks[step].name}` : remaining > checks[step].seconds ? `Get ready: ${remaining - checks[step].seconds}s` : `Playing window: ${remaining}s`}</button>
       <p>After a passing low E check, use “Finish setup” to release the input for practice. Results stay here for this visit; no test audio is saved or uploaded.</p>
       <button className="button secondary" disabled={remaining !== null} onClick={() => { stop(); onReady?.(qualified.current); }}>Finish setup</button>
     </>}

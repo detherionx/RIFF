@@ -65,6 +65,14 @@ export default function Riff() {
     [cloudMessage, setCloudMessage] = useState(""),
     [cloudBusy, setCloudBusy] = useState(false),
     [reset, setReset] = useState(false);
+  const [inputReady, setInputReady] = useState(false);
+  useEffect(() => {
+    const invalidate = () => setInputReady(false);
+    const hidden = () => { if (document.hidden) invalidate(); };
+    document.addEventListener("visibilitychange", hidden);
+    navigator.mediaDevices?.addEventListener("devicechange", invalidate);
+    return () => { document.removeEventListener("visibilitychange", hidden); navigator.mediaDevices?.removeEventListener("devicechange", invalidate); };
+  }, []);
   useEffect(() => {
     try {
       setProgress(readProgress() || initialProgress());
@@ -312,6 +320,8 @@ export default function Riff() {
               exercise={current}
               initialBpm={selected.bpm}
               progress={progress}
+              inputReady={inputReady}
+              onInputReady={setInputReady}
               onAttempt={attempt}
               onBack={() => setSelected(null)}
               onSelect={select}
@@ -782,7 +792,7 @@ export default function Riff() {
                     Private by default. Portable when you need it.
                   </p>
                   <div className="settings-grid">
-                    <AudioSetup />
+                    <AudioSetup onReady={setInputReady} />
                     <section className="panel">
                       <div className="section-heading">
                         <h2>Your starting point</h2>

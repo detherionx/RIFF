@@ -34,6 +34,8 @@ export default function Practice({
   onAttempt,
   onBack,
   onSelect,
+  inputReady,
+  onInputReady: setInputReady,
 }: {
   exercise: Exercise;
   initialBpm?: number;
@@ -41,12 +43,13 @@ export default function Practice({
   onAttempt: (a: Attempt) => void;
   onBack: () => void;
   onSelect: (id: string, bpm?: number) => void;
+  inputReady: boolean;
+  onInputReady: (ready: boolean) => void;
 }) {
   const [drill, setDrill] = useState<Drill | null>(null);
   const [targetIndex, setTargetIndex] = useState(0);
   const [inputCheck, setInputCheck] = useState<ReturnType<typeof checkInput> | null>(null);
   const [delayMeasured, setDelayMeasured] = useState(false);
-  const [inputReady, setInputReady] = useState(false);
   const [drillPasses, setDrillPasses] = useState<Record<Drill, number>>({ input: 0, note: 0, pulse: 0 });
   const exercise = drill ? diagnosticExercise(sourceExercise, drill, targetIndex) : sourceExercise;
   const [assessment, setAssessment] = useState<"separated" | "ringing">(

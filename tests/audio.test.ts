@@ -110,6 +110,44 @@ test("separate repeated attacks remain separate notes", () => {
     [40, 40, 40, 40],
   );
 });
+
+test("a one-hop level dip in one sustained note is not a second pick", () => {
+  const samples = tone(40, 1.5, 3);
+  for (let i = Math.round(rate * 0.4); i < Math.round(rate * 0.41); i++) samples[i] *= 0.1;
+  assert.equal(extractNotes(samples, rate).length, 1);
+});
+
+test("pitch recovery after interference does not invent a new attack", () => {
+  const samples = tone(40, 1.5, 3);
+  let seed = 123;
+  for (let i = Math.round(rate * 0.4); i < Math.round(rate * 0.6); i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    samples[i] = (seed / 2 ** 32 - 0.5) * 0.6;
+  }
+  assert.equal(extractNotes(samples, rate).length, 1);
+});
+
+test("soft gradual picks after real quiet gaps remain four notes", () => {
+  const samples = new Float32Array(rate * 8);
+  for (const start of [0.2, 2.2, 4.2, 6.2]) {
+    for (let i = 0; i < rate * 0.7; i++) {
+      const t = i / rate;
+      samples[Math.round(start * rate) + i] = 0.018 * Math.min(1, t / 0.08) * Math.exp(-t / 0.4) * Math.sin(2 * Math.PI * 82.4069 * t);
+    }
+  }
+  assert.deepEqual(extractNotes(samples, rate).map((n) => n.midi), [40, 40, 40, 40]);
+});
+
+test("short muting gaps re-arm soft notes without requiring a long rest", () => {
+  const samples = new Float32Array(rate * 3);
+  for (const start of [0.1, 0.64, 1.18, 1.72]) {
+    for (let i = 0; i < rate * 0.5; i++) {
+      const t = i / rate;
+      samples[Math.round(start * rate) + i] = 0.01 * Math.min(1, t / 0.06) * Math.sin(2 * Math.PI * 82.4069 * t);
+    }
+  }
+  assert.equal(extractNotes(samples, rate).length, 4);
+});
 test("rhythmic muted attacks remain distinct with decaying tails", () => {
   const pattern = Array.from({ length: 8 }, (_, index) => ({
     midi: 40,
