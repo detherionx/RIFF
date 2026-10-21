@@ -26,6 +26,7 @@ import { download, wav } from "@/lib/storage";
 import Fretboard, { noteName } from "./fretboard";
 import VideoReview from "./video-review";
 import AudioSetup from "./audio-setup";
+import Notation from "./notation";
 import { diagnosticExercise, type Drill } from "@/lib/coaching";
 export default function Practice({
   exercise: sourceExercise,
@@ -419,17 +420,8 @@ export default function Practice({
                 {beatsPerBar === 4 ? "4/4 · ONE CLICK = ONE BEAT" : "6/8 · E MINOR"}
               </span>
             </div>
-            {beatsPerBar === 4 && <div className="beat-guide" aria-label="Four-beat playing guide">
-              {Array.from({ length: 4 }, (_, beat) => {
-                const at = Math.max(0, Math.floor(pulse / 4)) * 4 + beat;
-                const note = exercise.notes.findLast((n) => n.beat <= at);
-                const action = note?.beat === at ? `PICK ${noteName(note.midi)}` : note && at < note.beat + note.duration ? "HOLD" : "REST";
-                return <div key={beat} className={pulse >= 0 && pulse % 4 === beat ? "current" : ""} aria-current={pulse >= 0 && pulse % 4 === beat ? "step" : undefined}>
-                  <strong>{beat + 1}</strong><span>{action}</span>
-                </div>;
-              })}
-            </div>}
-            {beatsPerBar === 4 && <p className="rhythm-help">{state === "countdown" ? "Wait through 1 · 2 · 3 · 4, then pick on the next 1." : drill ? "Quarter note = 1 beat. Pick on 1 and 3; stop and rest on 2 and 4. Two bars." : "Half note = 2 beats. Pick on 1 and 3; hold on 2 and 4. Stop the old note just before the next pick. Four bars."}</p>}
+            {beatsPerBar === 4 && <Notation exercise={exercise} pulse={pulse} />}
+            {beatsPerBar === 4 && <p className="rhythm-help">{state === "countdown" ? "Wait through 1 · 2 · 3 · 4, then pick on the next 1." : drill ? "Filled note = 1 beat; the following symbol is a 1-beat rest. Pick on 1 and 3; rest on 2 and 4." : "Open notehead + stem = half note = 2 beats. Pick once; let it sound for two clicks. Stop just before the next note."} Bass clef shows the sounding pitches.</p>}
             <div
               ref={tabRef}
               className="tablature"

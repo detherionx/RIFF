@@ -1169,11 +1169,8 @@ main {
   margin: 20px 0;
   scrollbar-color: #63704f #20271a;
 }
-.beat-guide { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 20px; }
-.beat-guide > div { display: grid; gap: 8px; padding: 12px 4px; text-align: center; border: 1px solid #697a55; border-radius: 8px; }
-.beat-guide strong { font-size: 24px; }
-.beat-guide span { font-size: 12px; font-weight: 700; }
-.beat-guide .current { background: #f68d4c; color: #1d2119; outline: 2px solid currentColor; }
+.notation { overflow-x: auto; margin-top: 16px; padding: 12px; border-radius: 10px; background: #fff7e5; scrollbar-color: #63704f #fff7e5; }
+.notation-current, .notation-current * { fill: #005fcc !important; stroke: #005fcc !important; }
 .rhythm-help { font-size: 14px; line-height: 1.6; }
 .tab-note > .note-length { font-size: 11px; line-height: 1.5; color: #d4dfc2; }
 .tab-labels {

@@ -16,7 +16,8 @@
     "motion": "latest",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "vexflow": "5.0.0"
   },
   "devDependencies": {
     "@types/node": "latest",
