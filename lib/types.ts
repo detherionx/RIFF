@@ -24,6 +24,7 @@ export type Exercise = {
   stage: number;
   bpm: number;
   beats: number;
+  meter?: 4 | 6;
   notes: Note[];
   instructions: string[];
   why: string;

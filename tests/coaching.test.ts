@@ -46,6 +46,18 @@ test("drills keep standard tuning and isolate the actual destination note", () =
   assert.ok(note.notes.every((n) => n.midi === exercise.notes[1].midi && n.string === exercise.notes[1].string));
   assert.deepEqual(note.notes.map((n) => n.beat), [0, 2, 4, 6]);
 });
+test("beginner drills use complete 4/4 bars with explicit holds or rests", () => {
+  assert.equal(exercise.meter, 4);
+  assert.equal(exercise.beats, 16);
+  assert.ok(exercise.notes.every((n) => n.beat % 2 === 0 && n.duration === 2));
+  for (const mode of ["input", "note", "pulse"] as const) {
+    const drill = diagnosticExercise(exercise, mode);
+    assert.equal(drill.meter, 4);
+    assert.equal(drill.beats, 8);
+    assert.ok(drill.notes.every((n) => n.beat % 2 === 0 && n.duration === 1));
+  }
+  assert.equal(getExercise("first-light-bass")!.meter ?? 6, 6);
+});
 test("diagnostic summaries round-trip, while video and unknown fields are rejected", () => {
   const progress = recordAttempt(initialProgress(), { ...screenshot,
     evidence: { ...screenshot.evidence, diagnostic: "input", matched: 7, expected: 8, observed: 16 } });

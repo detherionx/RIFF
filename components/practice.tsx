@@ -52,6 +52,7 @@ export default function Practice({
   const [delayMeasured, setDelayMeasured] = useState(false);
   const [drillPasses, setDrillPasses] = useState<Record<Drill, number>>({ input: 0, note: 0, pulse: 0 });
   const exercise = drill ? diagnosticExercise(sourceExercise, drill, targetIndex) : sourceExercise;
+  const beatsPerBar = exercise.meter ?? 6;
   const [assessment, setAssessment] = useState<"separated" | "ringing">(
     "separated",
   );
@@ -208,14 +209,14 @@ export default function Practice({
         return;
       }
       const capture = session.startCapture(),
-        first = await session.startMetronome(bpm),
-        boundary = first + (6 * 60) / bpm;
+        first = await session.startMetronome(bpm, beatsPerBar),
+        boundary = first + (beatsPerBar * 60) / bpm;
       if (!alive.current || run !== generation.current) {
         await session.close();
         return;
       }
       offset.current = boundary - capture;
-      setPulse(-6);
+      setPulse(-beatsPerBar);
       setState("countdown");
       timer.current = setInterval(() => {
         if (!alive.current || run !== generation.current) return;
@@ -363,6 +364,8 @@ export default function Practice({
       previous.length === 2
         ? previous[1].evidence.score! - previous[0].evidence.score!
         : null;
+  const phraseId = sourceExercise.id.replace(/-transition-\d+$/, "");
+  const transition = getExercise(phraseId === sourceExercise.id ? `${phraseId}-transition-${Math.max(1, targetIndex)}` : phraseId);
   return (
     <section className="practice-page">
       <button className="text-button back" onClick={onBack}>
@@ -392,6 +395,7 @@ export default function Practice({
           <button className="button secondary" disabled={active} onClick={() => chooseDrill("input")}>1. Check input</button>
           <button className="button secondary" disabled={active} onClick={() => chooseDrill("note")}>2. Isolate target note</button>
           <button className="button secondary" disabled={active} onClick={() => chooseDrill("pulse")}>3. Isolate pulse</button>
+          {transition && <button className="button secondary" disabled={active} onClick={() => onSelect(transition.id, drill ? phraseBpm.current : bpm)}>{phraseId === sourceExercise.id ? "Practise this change" : "Return to full phrase"}</button>}
           {drill && <button className="button secondary" disabled={active} onClick={() => chooseDrill(null)}>Return to {sourceExercise.title}</button>}
         </div>
         {inputCheck && <p role="status"><strong>{inputCheck.passed ? "Input check passed. " : "Input needs checking. "}</strong>{inputCheck.message}</p>}
@@ -404,17 +408,28 @@ export default function Practice({
             <div className="section-heading">
               <span className="eyebrow">
                 {state === "countdown"
-                  ? `COUNT IN · ${Math.max(1, pulse + 7)} / 6`
+                  ? `COUNT IN · ${Math.min(beatsPerBar, Math.max(1, pulse + beatsPerBar + 1))} / ${beatsPerBar} · WAIT`
                   : state === "recording"
-                    ? "YOUR TURN"
+                    ? `YOUR TURN · BAR ${Math.min(Math.ceil(exercise.beats / beatsPerBar), Math.floor(pulse / beatsPerBar) + 1)} / ${Math.ceil(exercise.beats / beatsPerBar)}`
                     : state === "demo"
                       ? "LISTEN & FOLLOW"
                       : "YOUR NEXT NOTES"}
               </span>
               <span className="mono">
-                {drill ? "FOUR ISOLATED PLUCKS" : "6/8 · E MINOR"}
+                {beatsPerBar === 4 ? "4/4 · ONE CLICK = ONE BEAT" : "6/8 · E MINOR"}
               </span>
             </div>
+            {beatsPerBar === 4 && <div className="beat-guide" aria-label="Four-beat playing guide">
+              {Array.from({ length: 4 }, (_, beat) => {
+                const at = Math.max(0, Math.floor(pulse / 4)) * 4 + beat;
+                const note = exercise.notes.findLast((n) => n.beat <= at);
+                const action = note?.beat === at ? `PICK ${noteName(note.midi)}` : note && at < note.beat + note.duration ? "HOLD" : "REST";
+                return <div key={beat} className={pulse >= 0 && pulse % 4 === beat ? "current" : ""} aria-current={pulse >= 0 && pulse % 4 === beat ? "step" : undefined}>
+                  <strong>{beat + 1}</strong><span>{action}</span>
+                </div>;
+              })}
+            </div>}
+            {beatsPerBar === 4 && <p className="rhythm-help">{state === "countdown" ? "Wait through 1 · 2 · 3 · 4, then pick on the next 1." : drill ? "Quarter note = 1 beat. Pick on 1 and 3; stop and rest on 2 and 4. Two bars." : "Half note = 2 beats. Pick on 1 and 3; hold on 2 and 4. Stop the old note just before the next pick. Four bars."}</p>}
             <div
               ref={tabRef}
               className="tablature"
@@ -428,15 +443,16 @@ export default function Practice({
               {exercise.notes.map((n, i) => (
                 <div
                   key={i}
-                  className={`tab-note ${pulse >= n.beat && pulse < n.beat + n.duration ? "current" : ""} ${i % 6 === 0 ? "bar-line" : ""}`}
+                  className={`tab-note ${pulse >= n.beat && pulse < n.beat + n.duration ? "current" : ""} ${n.beat % beatsPerBar === 0 ? "bar-line" : ""}`}
                 >
-                  <div className="tab-count">{drill ? n.beat + 1 : (n.beat % 6) + 1}</div>
+                  <div className="tab-count">{(n.beat % beatsPerBar) + 1}</div>
                   {Array.from({ length: 6 }, (_, s) => (
                     <span key={s}>
                       {n.string === s + 1 ? <b>{n.fret}</b> : <i />}
                     </span>
                   ))}
                   <small>{n.finger || "○"}</small>
+                  {beatsPerBar === 4 && <small className="note-length">{n.duration === 2 ? "Half note" : "Quarter note"}<br />{n.duration} {n.duration === 1 ? "beat" : "beats"}</small>}
                 </div>
               ))}
             </div>
@@ -466,7 +482,7 @@ export default function Practice({
                 onChange={(e) => setBpm(+e.target.value)}
               />
               <small>
-                {drill ? "One pulse per second; pick on alternate pulses" : `Eighth-note pulse · ${Math.round(bpm / 3)} dotted-quarter beats/min`}
+                {beatsPerBar === 4 ? "Quarter-note beats per minute · count 1, 2, 3, 4" : `Eighth-note pulse · ${Math.round(bpm / 3)} dotted-quarter beats/min`}
               </small>
             </div>
             <div className="button-row">
@@ -616,7 +632,7 @@ export default function Practice({
                 </span>
               </div>
               {evidence.matched !== undefined && <p>Pitch matches: {evidence.matched} / {evidence.expected} expected notes. Detected events: {evidence.observed}. Confidence describes the signal, not certainty about your technique.</p>}
-              {evidence.diagnostic === "timing" && <p>Provisional score: timing is uncalibrated, so this take does not change mastery. Use the pulse drill to practise even gaps; do not adjust the delay to improve the score.</p>}
+              {evidence.diagnostic === "timing" && <p>Timing is uncalibrated, so this take has no combined score and does not change mastery. Use the pulse drill to practise even gaps; do not adjust the delay to improve the result.</p>}
               {drill === "pulse" && evidence.consistency !== null && <p>Attack evenness: {evidence.consistency}/100. This measures variation around the pulse, not absolute lateness. Listen for equal gaps, then repeat at this tempo.</p>}
               {change !== null && (
                 <p className="muted">

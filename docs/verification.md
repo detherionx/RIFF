@@ -1,5 +1,15 @@
 # Release verification
 
+## Katana diagnostic setup — 21 October 2026
+
+55 TypeScript tests, strict type checking and the production build passed after the onset and rhythm-guide fixes. Python API: 11 passed, one local database test skipped; frontend and backend GitHub Actions passed for `aa010fc`. The actual repository includes the diagnostic-coaching changes and explicit device/channel selection. Existing progress storage remains unchanged.
+
+Player feedback exposed ambiguous 6/8 count-in and missing note lengths in beginner drills. Bridges and diagnostic drills now use 4/4, four count-in clicks, matching metronome accents, explicit half/quarter-note lengths and a highlighted PICK/HOLD/REST guide. Original song phrases retain their meter. Browser inspection verified the bridge guide at 55 quarter-note beats/min; the player must still confirm its usability.
+
+Interactive Chromium checks used SECONDARY (KATANA), channel 1, at 44,100 Hz. Quiet baseline, isolated low E, fretted C3, sustained low E and a controlled pulse drill were exercised with the player. These narrow checks exposed and helped correct false onset splits and missed soft attacks. They do not validate every string, overlapping pitches, absolute latency or physical technique. Camera lifecycle has automated coverage, but actual camera hardware remains untested. See [hardware protocol and limits](katana-validation.md).
+
+Deployment was attempted but Railway returned “Deploys have been paused temporarily”. Its official status page reported a build/API outage on 21 October. The public application still runs the previous release; the local preview contains these changes.
+
 ## Local diagnostic-coaching change — 19 October 2026
 
 47 TypeScript tests, strict type checking and production build passed. Python API: 11 passed, one database integration test skipped. Chromium inspection verified diagnostic drill controls and note/count targets. The separate Basic Pitch/YIN browser benchmark completed. Camera teardown, size limits and late callbacks were verified with mocks; no personal recording or physical-device validation was performed. These results apply to this local change, not the deployed release. See [audit and remaining acceptance work](diagnostic-coaching.md).

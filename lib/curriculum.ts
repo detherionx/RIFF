@@ -152,7 +152,7 @@ export const exercises: Exercise[] = [
     ],
     [
       "Standard tuning: E A D G B E, thick to thin.",
-      "Use your thumb. Play each bass note on its cue and let it ring.",
+      "Use your thumb. Play each bass note on its cue; for separated-note practice, stop it before the next note.",
       "Count 1 2 3, 4 5 6; each bass lasts three eighth-note pulses.",
     ],
     "This is the bass of your final piece. Four notes already make music.",
@@ -402,13 +402,15 @@ export function getExercise(id: string): Exercise | undefined {
     subtitle: `${source.title} · notes ${index}–${index + 1}`,
     bpm: Math.max(50, source.bpm - 15),
     beats: 16,
+    meter: 4,
     notes: Array.from({ length: 8 }, (_, i) => ({
       ...pair[i % 2],
       beat: i * 2,
       duration: 2,
     })),
     instructions: [
-      "Repeat these two notes slowly, with an even gap.",
+      "4/4: listen to four count-in clicks, then start on the next 1. Alternate the two displayed notes for four bars.",
+      "Each note is a half note (two beats): pick on 1, hold on 2; pick on 3, hold on 4.",
       "For scoring, stop each note before picking the next string. Open strings need no fretting finger.",
       "Two clean takes will bring you back to the full phrase.",
     ],
