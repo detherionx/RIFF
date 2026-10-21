@@ -173,6 +173,34 @@ export function recordingQuality(samples: Float32Array) {
   };
 }
 
+/** Experimental spectral evidence for the reported E2 + C3 mistake, not a polyphonic transcription. */
+export function checkBassOverlap(samples: Float32Array, sampleRate: number): number[] {
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 || recordingQuality(samples).invalid) return [];
+  // honey: four fixed frequencies only; benchmark annotated guitar before broadening or grading absence.
+  const size = Math.round(sampleRate * 0.16), hop = Math.round(sampleRate * 0.08);
+  const coefficients = [40, 48].flatMap((midi) => [1, 2].map((h) => 2 * Math.cos(2 * Math.PI * 440 * 2 ** ((midi - 69) / 12) * h / sampleRate)));
+  const window = Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1)));
+  const times: number[] = [];
+  let consecutive = 0;
+  for (let start = 0; start + size <= samples.length; start += hop) {
+    const energy = rms(samples, start, start + size) ** 2;
+    if (energy < 0.003 ** 2) { consecutive = 0; continue; }
+    const fractions = coefficients.map((coefficient) => {
+      let first = 0, second = 0;
+      for (let i = 0; i < size; i++) {
+        const next = samples[start + i] * window[i] + coefficient * first - second;
+        second = first; first = next;
+      }
+      return Math.max(0, first * first + second * second - coefficient * first * second) * 8 / (size * size * energy);
+    });
+    const e = fractions[0] + fractions[1], c = fractions[2] + fractions[3];
+    const possible = fractions[0] > 0.02 && fractions[2] > 0.02 && e > 0.08 && c > 0.08 && e + c > 0.3;
+    consecutive = possible ? consecutive + 1 : 0;
+    if (consecutive === 2) times.push(Math.max(0, (start - hop) / sampleRate));
+  }
+  return times;
+}
+
 /** Ordered edit-distance alignment preserves missing/extra notes instead of shifting all later notes. */
 export function analyzeRecording(
   samples: Float32Array,
@@ -221,8 +249,9 @@ export function analyzeRecording(
     return insufficient(
       "The input is clipping. Lower your input gain and record again; this take will not change mastery.",
     );
+  const overlap = exercise.notes.some((note) => note.midi === 48) ? checkBassOverlap(samples, sampleRate) : [];
   const detected = extractNotes(samples, sampleRate);
-  if (!detected.length)
+  if (!detected.length && !overlap.length)
     return insufficient(
       "I could not isolate a stable single-note pitch. Use a clean tone, reduce background sound and play one string at a time.",
     );
@@ -232,7 +261,7 @@ export function analyzeRecording(
     if (rms(samples, offset, offset + hop) >= 0.003)
       activeSeconds += hop / sampleRate;
   const voicedSeconds = detected.reduce((sum, note) => sum + note.duration, 0);
-  if (voicedSeconds / Math.max(0.01, activeSeconds) < 0.35)
+  if (voicedSeconds / Math.max(0.01, activeSeconds) < 0.35 && !overlap.length)
     return insufficient(
       "Most of this take could not be separated into clear notes. Reduce background noise, use a clean tone and retry; this take will not change mastery.",
     );
@@ -338,7 +367,13 @@ export function analyzeRecording(
     detected.filter((note) => note.duration < 0.09).length > m * 0.3;
   const weakestTransition = wrong.find((index) => index > 0) ??
     (latencyMs !== null ? worst?.index : undefined);
-  let message = `Matched ${correct} of ${n} notes. `;
+  let message = `Detected ${correct} of ${n} target pitches. `;
+  if (overlap.length)
+    return {
+      ...insufficient(`${message}Possible E2 and C3 sounding together near ${overlap.slice(0, 4).map((time) => `${time.toFixed(1)}s`).join(", ")}. This experimental check cannot establish the cause or exact string. Replay those moments, then practise four C3 notes with low E silent. No performance score or mastery change is assigned.`),
+      diagnostic: "overlap",
+      matched: correct, expected: n, observed: m, missed, extra,
+    };
   if (ambiguous)
     return {
       ...insufficient(`Detected ${m} events for ${n} notes, with ${correct} pitch matches. Extra events may be picking, ringing strings or detector splits. Run the four-pluck input check before repeating this bridge. This take will not change mastery.`),
@@ -353,7 +388,7 @@ export function analyzeRecording(
   }
   else if (latencyMs !== null && (timingMs ?? 0) > beat * 180)
     message += "The notes are there; place each attack on the pulse. ";
-  else message += "Repeat once more to show this is consistent. ";
+  else message += "This does not verify that other strings stayed silent. ";
   message += latencyMs !== null
     ? "Timing uses your latency adjustment."
     : "Timing includes unknown device delay. Pitch and event counts are shown separately; no combined score or mastery change is assigned.";

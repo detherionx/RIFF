@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { AudioEngine, checkInput, detectPitch, extractNotes, recordingQuality } from "@/lib/audio";
+import { AudioEngine, checkInput, checkBassOverlap, detectPitch, extractNotes, recordingQuality } from "@/lib/audio";
 import { inputError, loadInput, saveInput, type InputSettings } from "@/lib/input";
 import { noteName } from "./fretboard";
 
@@ -11,6 +11,7 @@ const checks = [
   { name: "Fretted C3", seconds: 8, midi: 48, instruction: "String 5, fret 3. Pick four times, about two seconds apart. Stop each note before the next pick." },
   { name: "Sustain", seconds: 5, midi: 40, instruction: "Pick the open low E once and let it ring for five seconds. This checks whether one pick becomes several detections." },
   { name: "Overlap", seconds: 5, midi: null, instruction: "Pick low E, then A while E still rings. This demonstrates the single-note detector's limit; no performance score is awarded." },
+  { name: "C3 + low E", seconds: 8, midi: null, instruction: "Hold string 5 at fret 3 (C3). Pick it together with the open low E four times, about two seconds apart. Stop both strings between pairs. This tests detection of an intentional extra string, not your skill." },
 ];
 export default function AudioSetup({ onReady }: { onReady?: (ready: boolean) => void }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]), [selection, setSelection] = useState<InputSettings | null>(null);
@@ -112,9 +113,13 @@ export default function AudioSetup({ onReady }: { onReady?: (ready: boolean) => 
             const checked = checkInput(capture.samples, quiet.current, capture.sampleRate);
             report += checked.message;
             qualified.current = checked.passed;
-          } else if (step === 9) report += "Overlapping pitches are unsupported. These events are observations, not a reliable note count.";
+          } else if (step >= 9) report += "These single-pitch events are observations, not a reliable count of simultaneous strings.";
           else report += q.invalid || q.clipped > 0.005 || q.level < 0.003 ? "Unreliable signal; fix input before judging playing." : `${notes.length === (step === 8 ? 1 : 4) && matches === notes.length ? "Expected count and pitches detected." : "Count or pitch differs: confirm the instructions and your actual picks before changing technique."}`;
           report += ` Events: ${notes.map((n) => `${noteName(n.midi)} @ ${n.time.toFixed(2)}s (${n.duration.toFixed(2)}s)`).join(", ") || "none"}.`;
+          if (step === 7 || step === 10) {
+            const started = performance.now(), overlap = checkBassOverlap(capture.samples, capture.sampleRate);
+            report += ` Experimental E2 + C3 check: ${overlap.length ? `possible overlap near ${overlap.map((time) => `${time.toFixed(1)}s`).join(", ")}` : "no overlap flagged; absence is not verified"}. Local analysis: ${Math.round(performance.now() - started)} ms.`;
+          }
           setResults((r) => [...r.slice(-19), report]);
         } catch (e) { if (run === generation.current) setError(inputError(e)); }
         finally { if (run === generation.current) setRemaining(null); }

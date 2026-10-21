@@ -295,7 +295,7 @@ export default function Practice({
       }
       setEvidence(result);
       if (drill) {
-        const passed = result.diagnostic !== "input" && result.matched === 4 && result.extra === 0 &&
+        const passed = result.diagnostic !== "input" && result.diagnostic !== "overlap" && result.matched === 4 && result.extra === 0 &&
           (drill !== "pulse" || (result.consistency ?? 0) >= 90);
         setDrillPasses((counts) => ({ ...counts, [drill]: passed ? counts[drill] + 1 : 0 }));
       }
@@ -348,7 +348,7 @@ export default function Practice({
   function chooseDrill(value: Drill | null) {
     if (busy.current) return;
     if (value && !drill) phraseBpm.current = bpm;
-    if (value) setTargetIndex(evidence?.weakestTransition ?? (sourceExercise.notes.length > 1 ? 1 : 0));
+    if (value) setTargetIndex(evidence?.diagnostic === "overlap" ? Math.max(0, sourceExercise.notes.findIndex((n) => n.midi === 48)) : evidence?.weakestTransition ?? (sourceExercise.notes.length > 1 ? 1 : 0));
     setDrill(value);
     setAssessment("separated");
     setBpm(value ? 60 : phraseBpm.current);
@@ -579,7 +579,7 @@ export default function Practice({
                     {evidence.score === null
                       ? assessment === "ringing"
                         ? "Your performance, ready to hear."
-                        : evidence.diagnostic === "timing" ? "Notes measured; timing is provisional." : "Let’s get a clearer take."
+                        : evidence.diagnostic === "overlap" ? "Possible extra string heard." : evidence.diagnostic === "timing" ? "Notes measured; timing is provisional." : "Let’s get a clearer take."
                       : evidence.score >= 85
                         ? "The phrase is coming together."
                         : "Here’s your next small step."}
@@ -596,11 +596,9 @@ export default function Practice({
               <div className="result-metrics">
                 <span>
                   <strong>
-                    {evidence.pitchAccuracy === null
-                      ? "—"
-                      : `${Math.round(evidence.pitchAccuracy)}%`}
+                    {evidence.matched !== undefined ? `${evidence.matched} / ${evidence.expected}` : "—"}
                   </strong>
-                  Expected notes matched
+                  Target pitches detected
                 </span>
                 <span>
                   <strong>
@@ -620,10 +618,11 @@ export default function Practice({
                   <strong>
                     {evidence.observed === undefined && evidence.score === null ? "—" : evidence.extra}
                   </strong>
-                  Extra events
+                  Extra separate attacks detected
                 </span>
               </div>
               {evidence.matched !== undefined && <p>Pitch matches: {evidence.matched} / {evidence.expected} expected notes. Detected events: {evidence.observed}. Confidence describes the signal, not certainty about your technique.</p>}
+              {evidence.matched !== undefined && <p><strong>Extra strings are not verified.</strong> This detector follows one pitch at a time. It can find the target note while missing another string sounding with it. These counts do not establish a clean take.</p>}
               {evidence.diagnostic === "timing" && <p>Timing is uncalibrated, so this take has no combined score and does not change mastery. Use the pulse drill to practise even gaps; do not adjust the delay to improve the result.</p>}
               {drill === "pulse" && evidence.consistency !== null && <p>Attack evenness: {evidence.consistency}/100. This measures variation around the pulse, not absolute lateness. Listen for equal gaps, then repeat at this tempo.</p>}
               {change !== null && (
@@ -654,10 +653,10 @@ export default function Practice({
               {!drill && <button
                 className="text-button"
                 onClick={() =>
-                  repeat ? void start() : next.mode === "diagnostic" ? chooseDrill(evidence.diagnostic === "timing" ? evidence.weakestTransition !== undefined ? "note" : "pulse" : "input") : onSelect(next.exerciseId, next.bpm)
+                  evidence.diagnostic === "overlap" ? chooseDrill("note") : repeat ? void start() : next.mode === "diagnostic" ? chooseDrill(evidence.diagnostic === "timing" ? evidence.weakestTransition !== undefined ? "note" : "pulse" : "input") : onSelect(next.exerciseId, next.bpm)
                 }
               >
-                {repeat
+                {evidence.diagnostic === "overlap" ? "Next: isolate C3" : repeat
                   ? "Repeat this phrase"
                   : next.mode === "diagnostic" ? evidence.diagnostic === "timing" ? "Next: focused drill" : "Next: check input" : `Next: ${getExercise(next.exerciseId)?.title || "focused practice"}`}{" "}
                 <ArrowRight size={17} />

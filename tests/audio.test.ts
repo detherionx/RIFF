@@ -8,6 +8,7 @@ import {
   detectPitch,
   extractNotes,
   checkInput,
+  checkBassOverlap,
 } from "../lib/audio";
 import type { Exercise } from "../lib/types";
 
@@ -62,6 +63,26 @@ const correct = exercise.notes.map((note) => ({
   midi: note.midi,
   time: note.beat * 0.5,
 }));
+
+test("experimental bass-pair check distinguishes isolated notes from sustained simultaneous E2 and C3", () => {
+  for (const midi of [40, 40.2, 45, 48, 48.2, 50, 55, 59, 64])
+    assert.deepEqual(checkBassOverlap(tone(midi, 0.8, 0.5), rate), [], `isolated ${midi}`);
+  assert.deepEqual(checkBassOverlap(new Float32Array(rate), rate), []);
+  assert.deepEqual(checkBassOverlap(new Float32Array(rate).fill(Number.NaN), rate), []);
+  assert.deepEqual(checkBassOverlap(sequence([{ midi: 40, time: 0 }, { midi: 48, time: 0.5 }]), rate), []);
+  const e = tone(40, 0.8, 0.5), c = tone(48, 0.8, 0.5);
+  for (const gain of [0.4, 1, 2]) {
+    const both = Float32Array.from(c, (sample, i) => sample + gain * e[i]);
+    assert.ok(checkBassOverlap(both, rate).length > 0);
+  }
+  const pair = { ...exercise, notes: [40, 48].map((midi, beat) => ({ ...exercise.notes[beat], midi })) };
+  const result = analyzeRecording(sequence([{ midi: 40, time: 0 }, { midi: 48, time: 0.5 }, { midi: 40, time: 0.5 }]), rate, pair, 120, 0);
+  assert.equal(result.score, null);
+  assert.equal(result.diagnostic, "overlap");
+  assert.match(result.message, /Possible E2 and C3/);
+  const cOnly = { ...pair, notes: [{ ...pair.notes[1], beat: 0 }] };
+  assert.equal(analyzeRecording(sequence([{ midi: 48, time: 0 }, { midi: 40, time: 0 }]), rate, cOnly, 120, 0).diagnostic, "overlap");
+});
 
 test("YIN detects low E and upper guitar notes with harmonics", () => {
   for (const midi of [40, 45, 52, 64, 76, 88]) {

@@ -15,7 +15,7 @@ class Contract(BaseModel):
 
 
 class Evidence(Contract):
-    diagnostic: Literal['input', 'timing', 'practice'] | None = None
+    diagnostic: Literal['input', 'timing', 'practice', 'overlap'] | None = None
     matched: Count | None = None
     expected: Count | None = None
     observed: Count | None = None

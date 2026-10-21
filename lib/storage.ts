@@ -97,7 +97,7 @@ function evidence(value: unknown) {
     integer(value.extra, 1_000_000) &&
     nullableScore(value.consistency) &&
     text(value.message) &&
-    (value.diagnostic === undefined || ["input", "timing", "practice"].includes(value.diagnostic as string)) &&
+    (value.diagnostic === undefined || ["input", "timing", "practice", "overlap"].includes(value.diagnostic as string)) &&
     ["matched", "expected", "observed"].every((key) => value[key] === undefined || integer(value[key], 1_000_000)) &&
     (value.weakestTransition === undefined ||
       integer(value.weakestTransition, 10_000))

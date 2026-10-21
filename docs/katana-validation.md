@@ -30,6 +30,12 @@ Record actual measurements and user-confirmed pick counts here only with their c
 
 If SECONDARY is absent: check Windows input visibility/permissions, close exclusive audio clients, refresh or restart Chrome/Edge. PRIMARY with effects disabled is an explicit fallback, changing the monitored tone. A DAW/virtual endpoint can route ASIO dry audio but adds software, latency and another gain stage; not installed automatically. Low dry level: [BOSS USB level guidance](https://support.roland.com/hc/en-us/articles/22194255491227-KATANA-MKII-amp-series-USB-output-recording-level-is-low), SYSTEM → USB SETTING → DRY OUT LEVEL.
 
+## Extra-string detection failure
+
+The player reported accidentally sounding low E with C3 near the end of a bridge take that displayed all expected pitches matched. Monophonic pitch coverage did not detect that playing error. The practice UI now shows target counts rather than a percentage and states that simultaneous extra strings are not verified. Zero extra separate attacks is not proof of clean playing.
+
+An experimental local spectral check looks only for simultaneous E2 and C3 fundamentals/harmonics in consecutive 160 ms windows. Positive evidence suppresses scoring and requests listening/comparison; a negative result never certifies silence on other strings. Synthetic tests cover isolated pitches, slight detuning, separated notes and this two-note mixture. The setup adds a C3-alone / C3-plus-low-E comparison with local processing time. This is not general polyphonic transcription and must be checked on the actual instrument before broader use.
+
 ## Model decision
 
 Keep the existing deterministic YIN pipeline pending these real tests. The retained browser benchmark compares the original YIN pipeline and Basic Pitch CPU on four synthetic fixtures, not this instrument. Basic Pitch had 16–22 false extra events and roughly eight seconds processing per four-second pitched fixture; YIN was faster with fewer false extras in that limited test. No cloud AI or runtime model dependency is added. Revisit model choice with a consented, annotated local guitar corpus; see `benchmarks/README.md` for reproducible measurements and limitations.

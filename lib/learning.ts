@@ -16,6 +16,7 @@ export const initialProgress = (): Progress => ({
 const trusted = (attempt: Attempt) =>
   attempt.evidence.diagnostic !== "input" &&
   attempt.evidence.diagnostic !== "timing" &&
+  attempt.evidence.diagnostic !== "overlap" &&
   attempt.evidence.extra < Math.max(3, (getExercise(attempt.exerciseId)?.notes.length ?? Infinity) / 2) &&
   ["high", "medium"].includes(attempt.evidence.confidence) &&
   attempt.evidence.score !== null &&
@@ -163,6 +164,9 @@ export function recommend(
   ) {
     const exercise = getExercise(latest.exerciseId)!;
     const struggling = progress.attempts.filter((a) => a.exerciseId === exercise.id).slice(-3);
+    if (latest.evidence.diagnostic === "overlap")
+      return result(exercise.id, latest.bpm, "diagnostic",
+        "Possible C3/low-E overlap: replay the flagged moments, then isolate four C3 picks while keeping low E silent. Return to this phrase at the same tempo. This evidence does not identify a hand-position fault.");
     if (latest.evidence.diagnostic === "timing")
       return result(exercise.id, latest.bpm, "diagnostic",
         latest.evidence.weakestTransition !== undefined

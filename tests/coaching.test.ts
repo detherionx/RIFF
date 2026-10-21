@@ -39,6 +39,15 @@ test("two failed bridge takes pause the retry loop at the current tempo", () => 
   assert.equal(recommend(progress).mode, "diagnostic");
   assert.equal(recommend(progress).bpm, 55);
 });
+test("possible overlap routes to the C3 drill without awarding mastery or lowering tempo", () => {
+  const progress = recordAttempt(initialProgress(), { ...screenshot,
+    evidence: { ...screenshot.evidence, score: null, diagnostic: "overlap", confidence: "low" } });
+  assert.equal(validProgress(progress), true);
+  assert.equal(recommend(progress).mode, "diagnostic");
+  assert.equal(recommend(progress).bpm, 55);
+  assert.match(recommend(progress).reason, /four C3 picks/);
+  assert.equal(progress.mastery.strings?.value, 0);
+});
 test("drills keep standard tuning and isolate the actual destination note", () => {
   for (const mode of ["input", "pulse"] as const)
     assert.deepEqual(diagnosticExercise(exercise, mode).notes.map((n) => n.midi), [40, 40, 40, 40]);

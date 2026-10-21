@@ -37,7 +37,7 @@ export type DetectedNote = {
   confidence: number;
 };
 export type Evidence = {
-  diagnostic?: "input" | "timing" | "practice";
+  diagnostic?: "input" | "timing" | "practice" | "overlap";
   matched?: number;
   expected?: number;
   observed?: number;

@@ -72,14 +72,15 @@ def test_auth_isolation_and_deletion(client):
     assert client.get('/v1/progress', headers=second).status_code == 200
 
 
-def test_diagnostic_summary_roundtrip_rejects_video(client):
+@pytest.mark.parametrize('diagnostic', ['input', 'overlap'])
+def test_diagnostic_summary_roundtrip_rejects_video(client, diagnostic):
     headers = session(client)
     progress = {**EMPTY, 'attempts': [{
         'id': 'diagnostic', 'exerciseId': 'first-light-bass', 'skill': 'strings',
         'at': '2026-10-19T15:42:00Z', 'bpm': 55, 'seconds': 17,
         'evidence': {'confidence': 'low', 'score': None, 'pitchAccuracy': None,
                      'timingMs': None, 'missed': 0, 'extra': 8, 'consistency': None,
-                     'diagnostic': 'input', 'matched': 7, 'expected': 8, 'observed': 16,
+                     'diagnostic': diagnostic, 'matched': 7, 'expected': 8, 'observed': 16,
                      'message': 'Check detection before repeating.'}}]}
     assert client.put('/v1/progress', headers=headers, json={'progress': progress}).status_code == 200
     assert client.get('/v1/progress', headers=headers).json()['progress'] == progress
